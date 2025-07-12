@@ -1,0 +1,10 @@
+tensorflow api docmentation : https://www.tensorflow.org/api_docs/python/tf/all_symbols
+
+
+17_FreeFuzz：https://github.com/ise-uiuc/FreeFuzz
+
+——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+
+inputs = tokenizer.encode("def print_hello_world():", return_tensors="pt").to(device)
+outputs = model.generate(inputs)
+print(tokenizer.decode(outputs[0]))
