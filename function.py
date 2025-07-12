@@ -21,6 +21,8 @@ append_api_condition_to_json(fun_string, file_path, new_doc_str)：向JSON文件
 
 get_api_conditions(fun_string, file_path)：获取JSON文件中的api_conditions
 
+append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件中添加过滤后的参数组合
+
 '''
 
 #根据函数名获取函数的文档字符串
