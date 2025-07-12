@@ -85,8 +85,4 @@ b_unique = resonal_combinations_as_tuples - all_combinationsa_as_tuples
 
 
 
-# 使用示例
-
-
-
 

@@ -85,8 +85,8 @@ def generate_prompt_1(lib_name, fun_string, api_doc):
     {"}"},
     "Mandatory Parameters": ["input", "weight"],
     "Mutually Exclusive Parameter Pairs": [],
-    "Mandatory coexistence parameters": []
-    "Conditional mutual exclusion parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
     {"}"}
 
 

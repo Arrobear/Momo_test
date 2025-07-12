@@ -17,9 +17,9 @@ filter_combinations(combinations, condition)：过滤不合法的参数组合
 
 read_file(file_path)：读取文件
 
-append_api_condition_to_json(fun_string, file_path, new_doc_str)：向JSON文件中添加API文档
+append_api_condition_to_json(fun_string, file_path, new_doc_str)：向JSON文件中添加API条件
 
-
+get_api_conditions(fun_string, file_path)：获取JSON文件中的api_conditions
 
 '''
 
@@ -77,14 +77,46 @@ def generate_all_combinations(args):
     return all_combinations
 
 #过滤不合法的参数组合
-def filter_combinations(combinations, condition):
-    filtered_combinations = []
-    for comb in combinations:
-        if all(p in comb for p in condition["Mandatory Parameters"]):
-            if not any(p in comb for p in condition["Mandatory Coexistence Parameters"]):
-                if not any(p in comb for p in condition["Mutually Exclusive Parameter Pairs"]):
-                    filtered_combinations.append(comb)
-    return filtered_combinations
+def filter_combinations(combinations, conditions):
+ 
+    # 获取条件
+    mandatory_params = conditions.get('Mandatory Parameters', [])
+    exclusive_groups = conditions.get('Mutually Exclusive Parameter Pairs', [])
+    coexistence_groups = conditions.get('Mandatory Coexistence Parameters', [])
+
+    filtered = []
+    
+    for combo in combinations:
+        # 1. 检查是否包含所有必须参数
+        if mandatory_params:
+            if mandatory_params and not all(param in combo for param in mandatory_params):
+                continue
+
+            
+        # 2. 检查是否不包含任何互斥参数组中的全部参数
+        def filter_exclusive_combinations(param_combinations, exclusive_pairs):
+            param_set = set(param_combinations)
+            for pair in exclusive_pairs:
+                if all(p in param_set for p in pair):
+                    return False
+            return True
+        if not filter_exclusive_combinations(combo, exclusive_groups):
+            continue
+
+        # 3. 检查是否满足所有必须共存的参数组
+        # 对于每个共存组，检查组合中是否至少包含该组中的一个参数
+        # 如果共存组为空，则跳过此检查
+        meets_coexistence = all(
+            all(param in combo for param in group)
+            for group in coexistence_groups
+            )
+        
+        if not meets_coexistence:
+            continue
+        
+        filtered.append(combo)
+    
+    return filtered
 
 #读取文件
 def read_file(file_path):
@@ -99,39 +131,63 @@ def read_file(file_path):
 
     return api_names
 
-# 向JSON文件中添加API文档
-def append_api_condition_to_json(fun_string, file_path, new_doc_str):
-
-    # 提取JSON部分
+# 向JSON文件中添加API条件
+def append_api_condition_to_json(path, fun_string, new_data):
     try:
-        # 找到JSON部分的起始和结束位置
-        start_idx = new_doc_str.find('{')
-        end_idx = new_doc_str.rfind('}') + 1
-        json_str = new_doc_str[start_idx:end_idx]
-        
-        # 解析JSON
-        new_data = json.loads(json_str)
-    except (ValueError, AttributeError) as e:
-        raise ValueError(f"无法从字符串中提取有效JSON: {e}")
+        # 把字符串解析为 Python 字典
+        condition_dict = json.loads(new_data)
+    except json.JSONDecodeError as e:
+        print(f"JSON 解析错误: {e}")
+        return
 
-    # 读取或初始化现有数据
+    # 读取原始 JSON 文件内容（如果存在）
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            data = {}
+    else:
+        data = {}
+
+    # 添加或更新项
+    data[fun_string] = condition_dict
+
+    # 写回 JSON 文件
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+# 获取JSON文件中的api_conditions
+def get_api_conditions(fun_string, file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            existing_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # 文件不存在或为空，初始化为包含API文档的列表
-        existing_data = {"api_conditions": []}
+            data = json.load(f)
 
-    # 确保数据结构正确
-    if not isinstance(existing_data, dict) or "api_conditions" not in existing_data:
-        existing_data = {"api_conditions": []}
+        # 直接获取指定函数名对应的条件字典
+        return data.get(fun_string, None)
 
-    # 添加新文档（带时间戳）
-    doc_entry = {
-        fun_string: new_data
-    }
-    existing_data["api_conditions"].append(doc_entry)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error reading file: {e}")
+        return None
 
-    # 写回文件
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(existing_data, f, indent=4, ensure_ascii=False)
+    
+
+# 将过滤好的参数组合写入JSON文件
+def append_filtered_combinations_to_json(path, fun_string, new_data):
+    # 如果文件存在，加载内容；否则创建空字典
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = {}
+    else:
+        data = {}
+
+    # 更新或添加新数据
+    data[fun_string] = new_data
+
+    # 写入到文件
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)

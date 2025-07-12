@@ -10,8 +10,9 @@ if __name__ == "__main__":
   #读取函数文档``
   api_names = read_file(f"{lib_name}_APIdef.txt")
 
-  generate_api_conditions(lib_name, api_names)
-    
+  generate_api_conditions(api_names)
+  
+  
 
     #编写条件生成和过滤部分代码
     #链接服务器测试

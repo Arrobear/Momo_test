@@ -4,9 +4,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import json
 import re
 import itertools
+import os
 
 # 参数设置
 checkpoint = "bigcode/starcoder2-15b"
-device = "cuda" # for GPU usage or "cpu" for CPU usage
+torch.cuda.set_device(0)  # 指定默认使用 GPU 0
+device = torch.device("cuda:7") 
 
 lib_name = "torch"  # 库名称
