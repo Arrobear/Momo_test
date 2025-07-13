@@ -3,7 +3,6 @@ from function import *
 from main import *
 from generate_prompt import *
 
-print("test")
 
 #all_args = ["input", "weight", "bias", "stride", "padding", "dilation", "groups"]
 
