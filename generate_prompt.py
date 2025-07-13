@@ -11,7 +11,7 @@ generate_prompt_1(lib_name, fun_string, api_doc): 根据函数名和函数文档
 '''
 
 #根据函数名和函数文档定制生成prompt_1
-def generate_prompt_1(lib_name, fun_string, api_doc):
+def generate_prompt_1(fun_string, api_doc):
     prompt = f'''
     1. Role:
         You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.

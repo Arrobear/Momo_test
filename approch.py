@@ -26,7 +26,7 @@ def generate_api_conditions(api_names):
         api_doc = get_doc(fun_string)
 
         # 生成prompt
-        prompt_1 = generate_prompt_1(lib_name, fun_string, api_doc)
+        prompt_1 = generate_prompt_1(fun_string, api_doc)
 
         # 调用LLM模型生成API条件
         inputs = tokenizer.encode(prompt_1, return_tensors="pt").to(device)
