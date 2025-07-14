@@ -5,6 +5,5 @@ tensorflow api docmentation : https://www.tensorflow.org/api_docs/python/tf/all_
 
 ——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
-inputs = tokenizer.encode("def print_hello_world():", return_tensors="pt").to(device)
-outputs = model.generate(inputs)
-print(tokenizer.decode(outputs[0]))
+OSError: Consistency check failed: file should be of size 4605952488 but has size 3691158490 (model-00001-of-00014.safetensors).
+This is usually due to network issues while downloading the file. Please retry with `force_download=True`.

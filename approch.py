@@ -13,9 +13,9 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 def generate_api_conditions(api_names):
     #加载模型
 
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     # to use Multiple GPUs do `model = AutoModelForCausalLM.from_pretrained(checkpoint, device_map="auto")`
-    model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
 
     while(True):
         # 获取函数名
