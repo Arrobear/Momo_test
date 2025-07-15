@@ -34,7 +34,7 @@ def generate_api_conditions(api_names):
         # 调用LLM模型生成API条件
         inputs = tokenizer.encode(prompt_1, return_tensors="pt").to(device)
         outputs = model.generate(
-            **inputs,
+            inputs,
             max_new_tokens=50,
             pad_token_id=tokenizer.pad_token_id  # 明确设置
         )
