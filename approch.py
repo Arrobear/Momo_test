@@ -15,7 +15,7 @@ def generate_api_conditions(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # to use Multiple GPUs do `model = AutoModelForCausalLM.from_pretrained(checkpoint, device_map="auto")`
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
 
     while(True):
         # 获取函数名
@@ -38,7 +38,7 @@ def generate_api_conditions(api_names):
         append_api_condition_to_json(f'{lib_name}_conditions.json', fun_string, api_conditions)
         print(f"已完成{fun_string}的API条件生成")
 
-        if i >= 1:
+        if i >= len(api_names):
             break
 
 def base_condition_filter(api_names):

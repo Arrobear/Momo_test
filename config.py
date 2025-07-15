@@ -13,6 +13,6 @@ model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
 
 torch.cuda.set_device(0)  # 指定默认使用 GPU 0
 
-device = torch.device("cuda:3") 
+device = torch.device("cuda:7") 
 
 lib_name = "torch"  # 库名称
