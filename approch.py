@@ -16,10 +16,11 @@ def generate_api_conditions(api_names):
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # to use Multiple GPUs do `model = AutoModelForCausalLM.from_pretrained(checkpoint, device_map="auto")`
     model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+    i = 0
 
     while(True):
         # 获取函数名
-        i = 0
+        
         fun_string = api_names[i]
         i += 1
         # 获取函数文档字符串
@@ -32,7 +33,12 @@ def generate_api_conditions(api_names):
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法
 
         # 调用LLM模型生成API条件
-        inputs = tokenizer.encode(prompt_1, return_tensors="pt").to(device)
+        inputs = tokenizer(
+            prompt_1,
+            return_tensors="pt",
+            padding=True,             # 可省略，单个样本不会触发 padding
+            truncation=True           # 防止输入过长
+        ).to(device)
         outputs = model.generate(
             inputs,
             max_new_tokens=50,
