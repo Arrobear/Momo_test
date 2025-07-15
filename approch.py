@@ -33,20 +33,21 @@ def generate_api_conditions(api_names):
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法
 
         # 调用LLM模型生成API条件
-        inputs = tokenizer(
-            prompt_1,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=2048  # 你可以根据模型设置合适长度
-        ).to(device)
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=100,
-            pad_token_id=tokenizer.pad_token_id,  # 明确设置
-            eos_token_id=tokenizer.eos_token_id
-        )
-
+        # inputs = tokenizer(
+        #     prompt_1,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=2048  # 你可以根据模型设置合适长度
+        # ).to(device)
+        # outputs = model.generate(
+        #     **inputs,
+        #     max_new_tokens=100,
+        #     pad_token_id=tokenizer.pad_token_id,  # 明确设置
+        #     eos_token_id=tokenizer.eos_token_id
+        # )
+        inputs = tokenizer.encode("def print_hello_world():", return_tensors="pt").to(device)
+        outputs = model.generate(inputs)
         api_conditions = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         #存储至json
