@@ -43,7 +43,8 @@ def generate_api_conditions(api_names):
         outputs = model.generate(
             **inputs,
             max_new_tokens=100,
-            pad_token_id=tokenizer.pad_token_id  # 明确设置
+            pad_token_id=tokenizer.pad_token_id,  # 明确设置
+            eos_token_id=tokenizer.eos_token_id
         )
 
         api_conditions = tokenizer.decode(outputs[0], skip_special_tokens=True)
