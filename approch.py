@@ -36,12 +36,13 @@ def generate_api_conditions(api_names):
         inputs = tokenizer(
             prompt_1,
             return_tensors="pt",
-            padding=True,             # 可省略，单个样本不会触发 padding
-            truncation=True           # 防止输入过长
+            padding=True,
+            truncation=True,
+            max_length=2048  # 你可以根据模型设置合适长度
         ).to(device)
         outputs = model.generate(
             inputs,
-            max_new_tokens=50,
+            max_new_tokens=100,
             pad_token_id=tokenizer.pad_token_id  # 明确设置
         )
 
