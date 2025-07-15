@@ -28,10 +28,18 @@ def generate_api_conditions(api_names):
         # 生成prompt
         prompt_1 = generate_prompt_1(fun_string, api_doc)
 
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token  # 常见做法
+
         # 调用LLM模型生成API条件
         inputs = tokenizer.encode(prompt_1, return_tensors="pt").to(device)
-        outputs = model.generate(inputs)
-        api_conditions = tokenizer.decode(outputs[0])
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=50,
+            pad_token_id=tokenizer.pad_token_id  # 明确设置
+        )
+
+        api_conditions = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         #存储至json
         print(api_conditions)
