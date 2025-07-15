@@ -41,7 +41,7 @@ def generate_api_conditions(api_names):
             max_length=2048  # 你可以根据模型设置合适长度
         ).to(device)
         outputs = model.generate(
-            inputs,
+            **inputs,
             max_new_tokens=100,
             pad_token_id=tokenizer.pad_token_id  # 明确设置
         )
