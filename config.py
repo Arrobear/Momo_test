@@ -1,6 +1,6 @@
 import torch
 import tensorflow as tf
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import json
 import re
 import itertools
