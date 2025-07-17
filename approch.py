@@ -14,7 +14,7 @@ def generate_api_conditions(api_names):
     #加载模型
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16).to(device)
     i = 0
 
     while(True):
@@ -37,8 +37,12 @@ def generate_api_conditions(api_names):
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=2048  # 你可以根据模型设置合适长度
-        ).to(device)
+            max_length=2048
+        )
+
+        # 把inputs放到模型参数所在设备
+        inputs = inputs.to(next(model.parameters()).device)
+
         outputs = model.generate(
             **inputs,
             max_new_tokens=100,
