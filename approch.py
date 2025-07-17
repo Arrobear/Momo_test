@@ -20,7 +20,7 @@ def generate_api_conditions(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # to use Multiple GPUs do `model = AutoModelForCausalLM.from_pretrained(checkpoint, device_map="auto")`
-    model = AutoModelForCausalLM.from_pretrained(model_path, quantization_config=quantization_config,torch_dtype=torch.float16 ).to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_path, device_map={"": 0}, quantization_config=quantization_config)
     i = 0
 
     while(True):
@@ -44,8 +44,8 @@ def generate_api_conditions(api_names):
             padding=True,
             truncation=True,
             max_length=2048  # 你可以根据模型设置合适长度
-        ).to(device)
-        
+        )
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
         outputs = model.generate(
             **inputs,
             max_new_tokens=100,
