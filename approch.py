@@ -14,7 +14,7 @@ def generate_api_conditions(api_names):
     #加载模型
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16).to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True,).to(device)
     i = 0
 
     while(True):

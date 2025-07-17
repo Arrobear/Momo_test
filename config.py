@@ -5,6 +5,8 @@ import json
 import re
 import itertools
 import os
+import bitsandbytes
+
 
 # 参数设置
 #checkpoint = "bigcode/starcoder2-15b"
