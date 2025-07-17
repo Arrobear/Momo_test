@@ -12,11 +12,15 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 
 def generate_api_conditions(api_names):
     #加载模型
+    quantization_config = BitsAndBytesConfig(
+        load_in_8bit=True,
+        llm_int8_threshold=6.0,  # 可选参数，控制量化精度
+        llm_int8_has_fp16_weight=False
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # to use Multiple GPUs do `model = AutoModelForCausalLM.from_pretrained(checkpoint, device_map="auto")`
-    model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
-    model = model.to(torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(model_path, quantization_config=quantization_config,torch_dtype=torch.float16 ).to(device)
     i = 0
 
     while(True):
@@ -41,7 +45,7 @@ def generate_api_conditions(api_names):
             truncation=True,
             max_length=2048  # 你可以根据模型设置合适长度
         ).to(device)
-        inputs = inputs.to(torch.float32)
+        
         outputs = model.generate(
             **inputs,
             max_new_tokens=100,
