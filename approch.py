@@ -28,28 +28,33 @@ def generate_api_conditions(api_names):
 
         # 生成prompt
         prompt_1 = generate_prompt_1(fun_string, api_doc)
-
+        chat = [
+            {"role": "user", "content": prompt_1}
+        ]
+        
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法
 
-        # 调用LLM模型生成API条件
-        inputs = tokenizer(
-            prompt_1,
+        inputs = tokenizer.apply_chat_template(
+            chat,
             return_tensors="pt",
-            padding=True,
             truncation=True,
-            max_length=2048
+            max_length=2048,
+            padding=True
         )
-
         # 把inputs放到模型参数所在设备
         inputs = inputs.to(next(model.parameters()).device)
 
         outputs = model.generate(
-            **inputs,
-            max_new_tokens=100,
-            pad_token_id=tokenizer.pad_token_id,  # 明确设置
-            eos_token_id=tokenizer.eos_token_id
+            inputs,
+            max_new_tokens=1024,  # 可以更大
+            do_sample=True,      # 启用采样
+            temperature=0.7,     # 增加多样性
+            top_p=0.9,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id
         )
+
         api_conditions = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         #存储至json
