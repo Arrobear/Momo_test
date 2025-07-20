@@ -47,10 +47,10 @@ def generate_api_conditions(api_names):
 
         outputs = model.generate(
             inputs,
-            max_new_tokens=1024,  # 可以更大
-            do_sample=True,      # 启用采样
-            temperature=0.7,     # 增加多样性
-            top_p=0.9,
+            max_new_tokens=2048,  # 可以更大
+            do_sample=False,      # 启用采样
+            temperature=1.0,     # 增加多样性
+            top_p=1.0,
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.pad_token_id
         )

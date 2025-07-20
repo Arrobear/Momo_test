@@ -89,6 +89,8 @@ def generate_prompt_1(fun_string, api_doc):
     "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
     {"}"}
 
+    6.Notions:
+    Only output the json content of the example in the output format, do not add explanations.
 
     '''
 
