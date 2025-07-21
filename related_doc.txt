@@ -400,6 +400,7 @@ Examples::
 
 
 deepseek
+<｜User｜>
     1. Role:
         You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
 
@@ -519,14 +520,26 @@ Examples::
     "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
     }
 
+    6.Notions:
+    Only output the json content of the example in the output format, do not add explanations.
 
-     Now, based on the provided documentation and context, please analyze and provide the required information.
+     Now, let's proceed with the analysis.
 </think>
 
-```json
 {
     "Parameter type": {
         "input": "Tensor (shape: (minibatch, in_channels, iW))",
         "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
         "bias": "Optional[Tensor] (shape: (out_channels))",
-        "stride": "Union[int, Tuple[int]]
+        "stride": "Union[int, Tuple[int]] (default: 1)",
+        "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+        "dilation": "Union[int, Tuple[int]] (default: 1)",
+        "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["padding", "stride", "(padding == 'same') & (stride != 1)"]
+}
+
+
