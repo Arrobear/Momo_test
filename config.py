@@ -21,6 +21,6 @@ model_path = "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 
 torch.cuda.set_device(0)  # 指定默认使用 GPU 0
 
-device = torch.device("cuda:0") 
+device = torch.device("cuda:4") 
 
 lib_name = "torch"  # 库名称
