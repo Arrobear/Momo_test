@@ -193,3 +193,22 @@ def append_filtered_combinations_to_json(path, fun_string, new_data):
     # 写入到文件
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+# 手动处理output
+def handle_output(text: str):
+
+    end_tag = "</think>"
+    if end_tag not in text:
+        print("未找到 </think> 标签")
+        return None
+
+    # 获取 </think> 后的内容
+    after_think = text.split(end_tag, 1)[1].strip()
+
+    try:
+        return json.loads(after_think)
+    except json.JSONDecodeError as e:
+        print(f"JSON 解析失败: {e}")
+        return None
+    

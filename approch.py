@@ -54,9 +54,8 @@ def generate_api_conditions(api_names):
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.pad_token_id
         )
-
-        api_conditions = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
+        outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        api_conditions = handle_output(outputs_text)
         #存储至json
         print(api_conditions)
 
