@@ -207,7 +207,7 @@ def handle_output(text: str):
     after_think = text.split(end_tag, 1)[1].strip()
 
     try:
-        return json.loads(after_think)
+        return after_think
     except json.JSONDecodeError as e:
         print(f"JSON 解析失败: {e}")
         return None
