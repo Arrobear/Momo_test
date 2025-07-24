@@ -15,7 +15,7 @@ def generate_api_conditions(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True,device_map={"": 0} )
-    model = AutoModelForCausalLM.from_pretrained(model_path,device_map={"": 0} )
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": 0} )
     #,  torch_dtype = torch.float16
     i = 0
 
