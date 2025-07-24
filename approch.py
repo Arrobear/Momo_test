@@ -60,7 +60,7 @@ def generate_api_conditions(api_names):
         #存储至json
         # print(api_conditions)
 
-        append_api_condition_to_json(f'{lib_name}_conditions.json', fun_string, api_conditions)
+        append_api_condition_to_json(f'/tmp/{lib_name}_conditions.json', fun_string, api_conditions)
         print(f"已完成{fun_string}的API条件生成")
 
         if i >= len(api_names):
