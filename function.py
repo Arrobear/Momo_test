@@ -135,12 +135,15 @@ def read_file(file_path):
 
 # 向JSON文件中添加API条件
 def append_api_condition_to_json(path, fun_string, new_data):
-    try:
-        # 把字符串解析为 Python 字典
-        condition_dict = json.loads(new_data)
-    except json.JSONDecodeError as e:
-        print(f"JSON 解析错误: {e}")
-        return
+    if not new_data:
+        condition_dict = {}
+    else:
+        try:
+            # 把字符串解析为 Python 字典
+            condition_dict = json.loads(new_data)
+        except json.JSONDecodeError as e:
+            print(f"JSON 解析错误: {e}")
+            return
 
     # 读取原始 JSON 文件内容（如果存在）
     if os.path.exists(path):
