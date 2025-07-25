@@ -27,8 +27,12 @@ append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件
 
 #根据函数名获取函数的文档字符串
 def get_doc(function_name):
-    function = eval(function_name)
-    return function.__doc__
+    try:
+        function = eval(function_name)
+        return function.__doc__
+    except (AttributeError, ImportError, NameError) as e:
+        return False
+
 
 #根据函数文档获取参数列表
 #针对torch函数文档进行处理

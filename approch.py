@@ -26,7 +26,9 @@ def generate_api_conditions(api_names):
         i += 1
         # 获取函数文档字符串
         api_doc = get_doc(fun_string)
-
+        if api_doc == False:
+            print(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            continue
         # 生成prompt
         prompt_1 = generate_prompt_1(fun_string, api_doc)
         chat = [
