@@ -23,6 +23,7 @@ get_api_conditions(fun_string, file_path)：获取JSON文件中的api_conditions
 
 append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件中添加过滤后的参数组合
 
+add_log(log)：打印日志到控制台和文件
 '''
 
 #根据函数名获取函数的文档字符串
@@ -180,8 +181,10 @@ def get_api_conditions(fun_string, file_path):
         print(f"Error reading file: {e}")
         return None
 
+# 记录log
 def add_log(log):
     with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
+    #with open(r'C:\Users\86184\Desktop\torch_log.txt', "a", encoding="utf-8") as f:
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 
