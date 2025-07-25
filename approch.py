@@ -14,8 +14,8 @@ def generate_api_conditions(api_names):
     #加载模型
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
-    # model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True,device_map={"": 0} )
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": 0} )
+    model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True,device_map={"": 0} )
+    #model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": 0} )
     #,  torch_dtype = torch.float16
     i = 0
 
@@ -27,7 +27,7 @@ def generate_api_conditions(api_names):
         # 获取函数文档字符串
         api_doc = get_doc(fun_string)
         if api_doc == False:
-            print(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
         # 生成prompt
         prompt_1 = generate_prompt_1(fun_string, api_doc)
@@ -58,15 +58,15 @@ def generate_api_conditions(api_names):
             pad_token_id=tokenizer.pad_token_id
         )
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        api_conditions = handle_output(outputs_text)
+        #api_conditions = handle_output(outputs_text)
         #存储至json
-        # print(api_conditions)
+        print(outputs_text)
 
-        append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
-        print(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
+        #append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
+        add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
-        if i >= len(api_names):
-        #if i >= 1:
+        #if i >= len(api_names):
+        if i >= 1:
             break
 
 def base_condition_filter(api_names):

@@ -180,7 +180,10 @@ def get_api_conditions(fun_string, file_path):
         print(f"Error reading file: {e}")
         return None
 
-    
+def add_log(log):
+    with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
+        print(log)  # 打印到控制台
+        print(log, file=f)  # 写入文件
 
 # 将过滤好的参数组合写入JSON文件
 def append_filtered_combinations_to_json(path, fun_string, new_data):
@@ -207,7 +210,7 @@ def handle_output(text: str):
 
     end_tag = "</think>"
     if end_tag not in text:
-        print("未找到 </think> 标签")
+        add_log("未找到 </think> 标签")
         return None
 
     # 获取 </think> 后的内容
@@ -216,6 +219,6 @@ def handle_output(text: str):
     try:
         return after_think
     except json.JSONDecodeError as e:
-        print(f"JSON 解析失败: {e}")
+        add_log(f"JSON 解析失败: {e}")
         return None
     
