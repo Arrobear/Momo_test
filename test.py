@@ -3,4 +3,8 @@ from function import *
 from main import *
 from generate_prompt import *
 
-add_log("test_1")
+a = get_doc("torch.normal")
+print(a)
+approach = f'extract_parameters_{lib_name}'
+apprameters_list = eval(approach)(a)
+print(apprameters_list)

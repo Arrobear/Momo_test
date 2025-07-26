@@ -45,7 +45,9 @@ def extract_parameters_torch(api_doc):
 
     # 处理参数字符串
     parameters = [p.strip().split('=')[0] for p in param_str.split(',')]
-    
+    for i in parameters:
+        if i == '*':
+            parameters.remove(i)
     return parameters
 
 #针对tf函数文档进行处理
