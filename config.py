@@ -23,4 +23,4 @@ torch.cuda.set_device(0)  # 指定默认使用 GPU 0
 
 device = torch.device("cuda:4") 
 
-lib_name = "torch"  # 库名称
+lib_name = "tf"  # 库名称
