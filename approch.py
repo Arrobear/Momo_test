@@ -58,15 +58,15 @@ def generate_api_conditions(api_names):
             pad_token_id=tokenizer.pad_token_id
         )
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        #api_conditions = handle_output(outputs_text)
+        api_conditions = handle_output(outputs_text, model_path)
         #存储至json
         print(outputs_text)
 
-        #append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
+        append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
         add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
         #if i >= len(api_names):
-        if i >= 1:
+        if i >= 50:
             break
 
 def base_condition_filter(api_names):

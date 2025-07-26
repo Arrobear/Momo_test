@@ -211,19 +211,28 @@ def append_filtered_combinations_to_json(path, fun_string, new_data):
 
 
 # 手动处理output
-def handle_output(text: str):
+def handle_output(text: str, model_path: str):
+    if model_path == "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct":
+        target = "  6.Notions:\n    Only output the json content of the example in the output format, do not add explanations.assistant\n"
+        start_index = text.find(target) + len(target)
+        json_content = text[start_index:].strip()
+        try:
+            return json_content
+        except json.JSONDecodeError as e:
+            add_log(f"JSON 解析失败: {e}")
+            return None
+    if model_path == "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B":
+        end_tag = "</think>"
+        if end_tag not in text:
+            add_log("未找到 </think> 标签")
+            return None
 
-    end_tag = "</think>"
-    if end_tag not in text:
-        add_log("未找到 </think> 标签")
-        return None
+        # 获取 </think> 后的内容
+        after_think = text.split(end_tag, 1)[1].strip()
 
-    # 获取 </think> 后的内容
-    after_think = text.split(end_tag, 1)[1].strip()
-
-    try:
-        return after_think
-    except json.JSONDecodeError as e:
-        add_log(f"JSON 解析失败: {e}")
-        return None
+        try:
+            return after_think
+        except json.JSONDecodeError as e:
+            add_log(f"JSON 解析失败: {e}")
+            return None
     
