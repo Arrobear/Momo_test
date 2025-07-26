@@ -60,7 +60,7 @@ def generate_api_conditions(api_names):
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
         api_conditions = handle_output(outputs_text, model_path)
         #存储至json
-        print(outputs_text)
+        #print(outputs_text)
 
         append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
         add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))

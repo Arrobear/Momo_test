@@ -142,4 +142,6 @@ Examples::
 }'''
 
 b = handle_output(a, model_path)
+
 print(b)
+append_api_condition_to_json(f'test.json', '''a''', b)
