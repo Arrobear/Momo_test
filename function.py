@@ -149,7 +149,8 @@ def append_api_condition_to_json(path, fun_string, new_data):
             # 把字符串解析为 Python 字典
             condition_dict = json.loads(new_data)
         except json.JSONDecodeError as e:
-            print(f"JSON 解析错误: {e}")
+            add_log(f"JSON 解析错误: {e}")
+            add_log(f"API 条件数据: {new_data}")
             return
 
     # 读取原始 JSON 文件内容（如果存在）
@@ -180,7 +181,7 @@ def get_api_conditions(fun_string, file_path):
         return data.get(fun_string, None)
 
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"Error reading file: {e}")
+        add_log(f"Error reading file: {e}")
         return None
 
 # 记录log
@@ -219,7 +220,6 @@ def handle_output(text: str, model_path: str):
         try:
             return json_content
         except json.JSONDecodeError as e:
-            add_log(f"JSON 解析失败: {e}")
             return None
     if model_path == "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B":
         end_tag = "</think>"
@@ -233,6 +233,5 @@ def handle_output(text: str, model_path: str):
         try:
             return after_think
         except json.JSONDecodeError as e:
-            add_log(f"JSON 解析失败: {e}")
             return None
     

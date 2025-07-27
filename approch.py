@@ -31,15 +31,12 @@ def generate_api_conditions(api_names):
             continue
         # 生成prompt
         prompt_1 = generate_prompt_1(fun_string, api_doc)
-        chat = [
-            {"role": "user", "content": prompt_1}
-        ]
         
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法
 
         inputs = tokenizer.apply_chat_template(
-            chat,
+            prompt_1,
             return_tensors="pt",
             truncation=True,
             max_length=2048,
@@ -60,13 +57,13 @@ def generate_api_conditions(api_names):
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
         api_conditions = handle_output(outputs_text, model_path)
         #存储至json
-        #print(outputs_text)
+        print(outputs_text)
 
         append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
         add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
         #if i >= len(api_names):
-        if i >= 50:
+        if i >= 1:
             break
 
 def base_condition_filter(api_names):

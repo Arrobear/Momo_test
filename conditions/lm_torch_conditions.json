@@ -1,0 +1,790 @@
+{
+    "torch.nn.functional.conv1d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups  kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int  Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "strides",
+            "dilation",
+            "(strides>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.conv3d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iT, iH))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups by kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.conv_transpose1d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups by kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.conv_transpose2d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "strides",
+            "dilation",
+            "(strides>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.conv_transpose3d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "strides",
+            "dilation",
+            "(strides>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.unfold": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
+            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int,, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.fold": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int Tuple[int]] (default: 1)",
+            "padding": "Union[int Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.avg_pool1d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "kernel_size": "Union[int, Tuple[int]]",
+            "stride": "Union[int, Tuple[int]] (default: kernel_size)",
+            "padding": "Union[int, Tuple[int], str] (default: 0)",
+            "ceil_mode": "bool (default: False)",
+            "count_include_pad": "bool (default: True)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "kernel_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "kernel_size",
+            "(stride>1)&(kernel_size>1)"
+        ]
+    },
+    "torch.nn.functional.avg_pool2d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "kernel_size": "Union[int, Tuple[int]]",
+            "stride": "Union[int, Tuple[int]] (default: kernel_size)",
+            "padding": "Union[int, Tuple[int], str] (default: 0)",
+            "ceil_mode": "bool (default: False)",
+            "count_include_pad": "bool (default: True)",
+            "divisor_override": "Optional[int]"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "kernel_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [
+            [
+                "stride",
+                "kernel_size"
+            ]
+        ],
+        "Mandatory Coexistence Parameters": [
+            [
+                "kernel_size",
+                "stride"
+            ]
+        ],
+        "Conditional Mutual Exclusion Parameters": [
+            "padding",
+            "ceil_mode",
+            "(padding!='valid')&(ceil_mode==True)"
+        ]
+    },
+    "torch.nn.functional.avg_pool3d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "kernel_size": "Union[int, Tuple[int]]",
+            "stride": "Union[int, Tuple[int]] (default: kernel_size)",
+            "padding": "Union[int, Tuple[int], str] (default: 0)",
+            "ceil_mode": "bool (default: False)",
+            "count_include_pad": "bool (default: True)",
+            "divisor_override": "Optional[int]"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "kernel_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [
+            [
+                "stride",
+                "kernel_size"
+            ]
+        ],
+        "Mandatory Coexistence Parameters": [
+            [
+                "kernel_size",
+                "stride"
+            ]
+        ],
+        "Conditional Mutual Exclusion Parameters": [
+            "padding",
+            "ceil_mode",
+            "(padding!='valid')&(ceil_mode)"
+        ]
+    },
+    "torch.nn.functional.max_pool1d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "kernel_size": "Union[int, Tuple[int]]",
+            "stride": "Union[int, Tuple[int]] (default: kernel_size)",
+            "padding": "Union[int, Tuple[int], str] (default: 0)",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "ceil_mode": "bool (default: False)",
+            "return_indices": "bool (default: False)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "kernel_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "ceil_mode",
+            "return_indices",
+            "(ceil_mode=True)&(return_indices=True)"
+        ]
+    },
+    "torch.nn.functional.max_pool2d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "kernel_size": "Union[int, Tuple[int]]",
+            "stride": "Union[int, Tuple[int]] (default: kernel_size)",
+            "padding": "Union[int, Tuple[int], str] (default: 0)",
+            "dilation": "Union[int] (default: 1)",
+            "ceil_mode": "bool",
+            "return_indices": "bool"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "kernel_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [
+            [
+                "kernel_size",
+                "stride"
+            ]
+        ],
+        "Conditional Mutual Exclusion Parameters": [
+            "ceil_mode",
+            "return_indices",
+            "(ceil_mode=True)&(return_indices=True)"
+        ]
+    },
+    "torch.nn.functional.max_unpool1d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.max_unpool2d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
+            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int,, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.max_unpool3d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int  Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.lp_pool1d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.lp_pool2d": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.adaptive_max_pool1d": {
+        "Parameter type": {
+            "output_size": "int",
+            "return_indices": "bool"
+        },
+        "Mandatory Parameters": [
+            "output_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.adaptive_max_pool2d": {
+        "Parameter type": {
+            "output_size": "Union[int, Tuple[int]] (default: None)",
+            "return_indices": "bool (default: False)"
+        },
+        "Mandatory Parameters": [
+            "output_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.adaptive_max_pool3d": {
+        "Parameter type": {
+            "output_size": "Union[int, Tuple[int]]",
+            "return_indices": "bool (default: False)"
+        },
+        "Mandatory Parameters": [
+            "output_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.adaptive_avg_pool1d": {
+        "Parameter type": {
+            "output_size": "int"
+        },
+        "Mandatory Parameters": [
+            "output_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.adaptive_avg_pool2d": {
+        "Parameter type": {
+            "output_size": "Union[int, Tuple[int]] (default: None)"
+        },
+        "Mandatory Parameters": [
+            "output_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.adaptive_avg_pool3d": {
+        "Parameter type": {
+            "output_size": "Union[int, Tuple[int]] (default: None)"
+        },
+        "Mandatory Parameters": [
+            "output_size"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.threshold": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.threshold_": {
+        "Parameter type": {
+            "input": "Tensor",
+            "threshold": "Tensor",
+            "weight": "Tensor",
+            "bias": "Optional[Tensor]",
+            "stride": "Union[int, Tuple[int]]",
+            "padding": "Union[int, Tuple[int], str]",
+            "dilation": "Union[int, Tuple[int]]",
+            "groups": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "threshold"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.relu": {
+        "Parameter type": {
+            "input": "Tensor",
+            "inplace": "bool"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.relu_": {
+        "Parameter type": {
+            "input": "Tensor",
+            "weight": "Tensor",
+            "bias": "Optional[Tensor]",
+            "stride": "Union[int, Tuple[int]]",
+            "padding": "Union[int, Tuple[int], str]",
+            "dilation": "Union[int, Tuple[int]]",
+            "groups": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.hardtanh": {
+        "Parameter type": {
+            "input": "Tensor (min_val=-1,, max_val=1,, inplace=False)",
+            "min_val": "int",
+            "max_val": "int",
+            "inplace": "bool"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "min_val",
+            "max_val"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.hardtanh_": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch,, in_channels, iW))",
+            "min_val": "int (default: -1)",
+            "max_val": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "min_val",
+            "max_val"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.relu6": {
+        "Parameter type": {
+            "input": "Tensor",
+            "inplace": "bool"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.elu": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
+            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
+            "bias": "Optional[Tensor] (shape: (out_channels))",
+            "stride": "Union[int,, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "groups": "int (default: 1)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.elu_": {
+        "Parameter type": {
+            "input": "Tensor",
+            "alpha": "float"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "alpha"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.selu": {
+        "Parameter type": {
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "inplace": "bool (default: False)"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "inplace"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.leaky_relu_": {
+        "Parameter type": {
+            "input": "Tensor",
+            "negative_slope": "float (default: 0.01)"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.prelu": {
+        "Parameter type": {
+            "input": "Tensor",
+            "weight": "Tensor or scalar"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.rrelu": {
+        "Parameter type": {
+            "input": "Tensor",
+            "lower": "float",
+            "upper": "float",
+            "training": "bool",
+            "inplace": "bool"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.glu": {
+        "Parameter type": {
+            "input": "Tensor",
+            "dim": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "dim"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.logsigmoid": {
+        "Parameter type": {
+            "input": "Tensor",
+            "weight": "Tensor",
+            "bias": "Optional[Tensor]",
+            "stride": "Union[int, Tuple[int]]",
+            "padding": "Union[int, Tuple[int], str]",
+            "dilation": "Union[int, Tuple[int]]",
+            "groups": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.hardshrink": {
+        "Parameter type": {
+            "input": "Tensor",
+            "lambd": "float"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "lambd"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.tanhshrink": {
+        "Parameter type": {
+            "input": "Tensor",
+            "weight": "Tensor",
+            "bias": "Optional[Tensor]",
+            "stride": "Union[int, Tuple[int]]",
+            "padding": "Union[int, Tuple[int], str]",
+            "dilation": "Union[int, Tuple[int]]",
+            "groups": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "stride",
+            "dilation",
+            "(stride>1)&(dilation>1)"
+        ]
+    },
+    "torch.nn.functional.softsign": {
+        "Parameter type": {
+            "input": "Tensor",
+            "weight": "Tensor",
+            "bias": "Optional[Tensor]",
+            "stride": "Union[int, Tuple[int]]",
+            "padding": "Union[int, Tuple[int], str]",
+            "dilation": "Union[int, Tuple[int]]",
+            "groups": "int"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.softplus": {
+        "Parameter type": {
+            "input": "Tensor",
+            "beta": "float",
+            "threshold": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "beta"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "input",
+            "beta",
+            "(input * beta > threshold)"
+        ]
+    },
+    "torch.nn.functional.softmin": {
+        "Parameter type": {
+            "input": "Tensor",
+            "dim": "int",
+            "dtype": "Optional[str]"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "dim"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "dtype",
+            "input",
+            "(dtype is not None)&(input is not None)"
+        ]
+    }
+}

@@ -12,7 +12,7 @@ generate_prompt_1(lib_name, fun_string, api_doc): 根据函数名和函数文档
 
 #根据函数名和函数文档定制生成prompt_1
 def generate_prompt_1(fun_string, api_doc):
-    prompt = f'''
+    ori_prompt = f'''
     1. Role:
         You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
 
@@ -88,11 +88,23 @@ def generate_prompt_1(fun_string, api_doc):
     "Mandatory Coexistence Parameters": [],
     "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
     {"}"}
-
-    6.Notions:
-    Only output the json content of the example in the output format, do not add explanations.
-
     '''
 
+    notion_1 = '''
+    6.Notions:
+    Only output the json content of the example in the output format, do not add explanations.
+    '''
+    notion_2 = '''
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    '''
+    if model_path in["/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B" , "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"]:
+        ori_prompt_1 = ori_prompt + notion_1
+        prompt = [
+            {"role": "user", "content": ori_prompt_1}
+        ]
+    else:
+        ori_prompt_1 = ori_prompt + notion_2
+        prompt = ori_prompt_1
+        
     return prompt
 
