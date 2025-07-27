@@ -170,7 +170,6 @@ def append_api_condition_to_json(path, fun_string, new_data):
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-
 # 获取JSON文件中的api_conditions
 def get_api_conditions(fun_string, file_path):
     try:
@@ -209,7 +208,6 @@ def append_filtered_combinations_to_json(path, fun_string, new_data):
     # 写入到文件
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
-
 
 # 手动处理output
 def handle_output(text: str, model_path: str):
