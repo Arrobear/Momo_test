@@ -57,7 +57,7 @@ def generate_api_conditions(api_names):
         )
         # 解码输出
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        # add_log("模型输出：/n" + outputs_text + "/n ______________________________________________________________________________________________________________________")
+        add_log("模型输出：/n" + outputs_text + "/n ______________________________________________________________________________________________________________________")
         
         api_conditions = handle_output(outputs_text, model_path)
 

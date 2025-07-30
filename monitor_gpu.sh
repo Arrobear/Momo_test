@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # 设置你要运行的 Python 程序路径
-PYTHON_SCRIPT="/nasdata/haoyahui/Momo_test/test.py"
+PYTHON_SCRIPT="/nasdata/haoyahui/Momo_test/main.py"
 
 # 显存使用阈值（单位：MiB）
-THRESHOLD=2000
+THRESHOLD=5000
 
 # 是否已经执行过脚本
 EXECUTED=0
@@ -43,5 +43,5 @@ while true; do
         exit 0
     fi
 
-    sleep 30
+    sleep 15
 done
