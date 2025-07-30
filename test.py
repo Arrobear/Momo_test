@@ -13,6 +13,11 @@ def log_analysis():
 log_analysis()
 
 
+# gpu_str = os.environ.get("FREE_GPUS", "")
+
+# gpu_ids = [int(g) for g in gpu_str.strip().split()] if gpu_str else []
+
+
 
 # bnb_config = BitsAndBytesConfig(
 #     load_in_4bit=True,

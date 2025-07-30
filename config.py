@@ -20,9 +20,11 @@ model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
 torch.cuda.set_device(0)  # 指定默认使用 GPU 0
 
-# device = torch.device("cuda:4") 
-
 lib_name = "torch"  # 库名称
+
+gpu_str = os.environ.get("FREE_GPUS", "")
+
+gpu_ids = [int(g) for g in gpu_str.strip().split()] if gpu_str else []
 
 torch_samename_list = [
     "torch.dequantize",
