@@ -150,7 +150,6 @@ def append_api_condition_to_json(path, fun_string, new_data):
             condition_dict = json.loads(new_data)
         except json.JSONDecodeError as e:
             add_log(f"JSON 解析错误: {e}")
-            add_log(f"API 条件数据: {new_data}")
             return
 
     # 读取原始 JSON 文件内容（如果存在）
