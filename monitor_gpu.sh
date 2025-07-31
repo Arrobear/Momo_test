@@ -43,5 +43,5 @@ while true; do
         exit 0
     fi
 
-    sleep 15
+    sleep 1
 done

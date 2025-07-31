@@ -15,7 +15,7 @@ def generate_api_conditions(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(model_path,device_map={"": gpu_ids[0]} )
-    # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": 4} )
+    # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
     # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": 0} )
     # , load_in_8bit=True
     i = 0
@@ -35,19 +35,26 @@ def generate_api_conditions(api_names):
         
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法
-
-        inputs = tokenizer.apply_chat_template(
+        inputs = tokenizer(
             prompt_1,
             return_tensors="pt",
             truncation=True,
             max_length=2048,
             padding=True
         )
+
+        # inputs = tokenizer.apply_chat_template(
+        #     prompt_1,
+        #     return_tensors="pt",
+        #     truncation=True,
+        #     max_length=2048,
+        #     padding=True
+        # )
         # 把inputs放到模型参数所在设备
         inputs = inputs.to(next(model.parameters()).device)
 
         outputs = model.generate(
-            inputs,
+            **inputs,
             max_new_tokens=2048,  # 可以更大
             do_sample=False,      # 启用采样
             temperature=1.0,     # 增加多样性
@@ -66,7 +73,7 @@ def generate_api_conditions(api_names):
         add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
         #if i >= len(api_names):
-        if i >= 1:
+        if i >= 50:
             break
 
 def base_condition_filter(api_names):
