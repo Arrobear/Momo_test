@@ -1,0 +1,54 @@
+{
+    "torch.sparse_coo_tensor": {},
+    "torch.load": {
+        "Parameter type": {
+            "f": "file-like object or str or os.PathLike",
+            "map_location": "callable, torch.device, str, or dict",
+            "pickle_module": "module",
+            "weights_only": "bool",
+            "mmap": "bool or None",
+            "pickle_load_args": "dict"
+        },
+        "Mandatory Parameters": [
+            "f"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.triu": {},
+    "torch.svd": {},
+    "torch.lobpcg": {},
+    "torch.nn.Conv1d": {},
+    "torch.nn.Unfold": {},
+    "torch.nn.SyncBatchNorm": {},
+    "torch.nn.EmbeddingBag": {
+        "Parameter type": {
+            "num_embeddings": "int",
+            "embedding_dim": "int",
+            "max_norm": "Optional[float]",
+            "norm_type": "Optional[float]",
+            "scale_grad_by_freq": "bool",
+            "mode": "Optional[str]",
+            "sparse": "bool",
+            "include_last_offset": "bool",
+            "padding_idx": "Optional[int]"
+        },
+        "Mandatory Parameters": [
+            "num_embeddings",
+            "embedding_dim"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": [
+            "scale_grad_by_freq",
+            "mode",
+            "(scale_grad_by_freq=True)&(mode='max')"
+        ]
+    },
+    "torch.nn.NLLLoss": {},
+    "torch.nn.BCEWithLogitsLoss": {},
+    "torch.nn.TripletMarginWithDistanceLoss": {},
+    "torch.nn.Upsample": {},
+    "torch.nn.parallel.DistributedDataParallel": {}
+}

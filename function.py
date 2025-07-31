@@ -246,7 +246,7 @@ def generate_input(prompt, tokenizer, model):
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=2048,
+            max_length=4096,
             padding=True
         )
     else:
@@ -254,7 +254,7 @@ def generate_input(prompt, tokenizer, model):
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=2048,
+            max_length=4096,
             padding=True
         )
     return inputs
@@ -268,7 +268,7 @@ def generate_output(inputs, model, tokenizer):
     if model_path not in model_path_list:
         outputs = model.generate(
             **inputs,
-            max_new_tokens=2048,  # 可以更大
+            max_new_tokens=4096,  # 可以更大
             do_sample=False,      # 启用采样
             temperature=1.0,     # 增加多样性
             top_p=1.0,
@@ -278,7 +278,7 @@ def generate_output(inputs, model, tokenizer):
     else:
         outputs = model.generate(
             inputs,
-            max_new_tokens=2048,  # 可以更大
+            max_new_tokens=4096,  # 可以更大
             do_sample=False,      # 启用采样
             temperature=1.0,     # 增加多样性
             top_p=1.0,
