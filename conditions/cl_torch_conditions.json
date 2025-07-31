@@ -1,0 +1,7 @@
+{
+    "torch.nn.functional.conv1d": {},
+    "torch.nn.functional.conv2d": {},
+    "torch.nn.functional.conv3d": {},
+    "torch.nn.functional.conv_transpose1d": {},
+    "torch.nn.functional.conv_transpose2d": {}
+}

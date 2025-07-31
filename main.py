@@ -8,9 +8,9 @@ if __name__ == "__main__":
   print("", end = "")
 
   #读取函数文档``
-  api_names = read_file(f"{lib_name}_APIdef.txt")
+  # api_names = read_file(f"{lib_name}_APIdef.txt")
 
-  generate_api_conditions(api_names)
+  generate_api_conditions(ds_torch_fail_list)
   
   '''
     补充实验代码

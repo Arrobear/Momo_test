@@ -1,0 +1,1742 @@
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv1d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv1d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 1D convolution over an input signal composed of several input
+planes.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.Conv1d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+Note:
+    This operator supports complex data types i.e. ``complex32, complex64, complex128``.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iW)`
+    weight: filters of shape :math:`(\text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kW)`
+    bias: optional bias of shape :math:`(\text{out\_channels})`. Default: ``None``
+    stride: the stride of the convolving kernel. Can be a single number or
+      a one-element tuple `(sW,)`. Default: 1
+    padding: implicit paddings on both sides of the input. Can be a string {'valid', 'same'},
+      single number or a one-element tuple `(padW,)`. Default: 0
+      ``padding='valid'`` is the same as no padding. ``padding='same'`` pads
+      the input so the output has the same shape as the input. However, this mode
+      doesn't support any stride values other than 1.
+
+      .. warning::
+          For ``padding='same'``, if the ``weight`` is even-length and
+          ``dilation`` is odd in any dimension, a full :func:`pad` operation
+          may be needed internally. Lowering performance.
+    dilation: the spacing between kernel elements. Can be a single number or
+      a one-element tuple `(dW,)`. Default: 1
+    groups: split input into groups, :math:`\text{in\_channels}` should be divisible by
+      the number of groups. Default: 1
+
+Examples::
+
+    >>> inputs = torch.randn(33, 16, 30)
+    >>> filters = torch.randn(20, 16, 5)
+    >>> F.conv1d(inputs, filters)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    The evaluation will be based on the completeness and accuracy of the output.
+
+    ---
+    7.References:
+
+    [1] https://pytorch.org/docs/stable/generated/torch.nn.functional.conv1d.html
+    [2] https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [3] https://pytorch.org/docs/stable/nn.html
+    [4] https://pytorch.org/docs/stable/nn.functional.html
+    [5] https://pytorch.org/docs/stable/nn.html
+    [6] https://pytorch.org/docs/stable/nn.functional.html
+    [7] https://pytorch.org/docs/stable/nn.html
+    [8] https://pytorch.org/docs/stable/nn.functional.html
+    [9] https://pytorch.org/docs/stable/nn.html
+    [10] https://pytorch.org/docs/stable/nn.functional.html
+    [11] https://pytorch.org/docs/stable/nn.html
+    [12] https://pytorch.org/docs/stable/nn.functional.html
+    [13] https://pytorch.org/docs/stable/nn.html
+    [14] https://pytorch.org/docs/stable/nn.functional.html
+    [15] https://pytorch.org/docs/stable/nn.html
+    [16] https://pytorch.org/docs/stable/nn.functional.html
+    [17] https://pytorch.org/docs/stable/nn.html
+    [18] https://pytorch.org/docs/stable/nn.functional.html
+    [19] https://pytorch.org/docs/stable/nn.html
+    [20] https://pytorch.org/docs/stable/nn.functional.html
+    [21] https://pytorch.org/docs/stable/nn.html
+    [22] https://pytorch.org/docs/stable/nn.functional.html
+    [23] https://pytorch.org/docs/stable/nn.html
+    [24] https://pytorch.org/docs/stable/nn.functional.html
+    [25] https://pytorch.org/docs/stable/nn.html
+    [26] https://pytorch.org/docs/stable/nn.functional.html
+    [27] https://pytorch.org/docs/stable/nn.html
+    [28] https://pytorch.org/docs/stable/nn.functional.html
+    [29] https://pytorch.org/docs/stable/nn.html
+    [30] https://pytorch.org/docs/stable/nn.functional.html
+    [31] https://pytorch.org/docs/stable/nn.html
+    [32] https://pytorch.org/docs/stable/nn.functional.html
+    [33] https://pytorch.org/docs/stable/nn.html
+    [34] https://pytorch.org/docs/stable/nn.functional.html
+    [35] https://pytorch.org/docs/stable/nn.html
+    [36] https://pytorch.org/docs/stable/nn.functional.html
+    [37] https://pytorch.org/docs/stable/nn.html
+    [38] https://pytorch.org/docs/stable/nn.functional.html
+    [39] https://pytorch.org/docs/stable/nn.html
+    [40] https://pytorch.org/docs/stable/nn.functional.html
+    [41] https://pytorch.org/docs/stable/nn.html
+    [42] https://pytorch.org/docs/stable/nn.functional.html
+    [43] https://pytorch.org/docs/stable/nn.html
+    [44] https://pytorch.org/docs/stable/nn.functional.html
+    [45] https://pytorch.org/docs/stable/nn.html
+    [46] https://pytorch.org/docs/stable/nn.functional.html
+    [47] https://pytorch.org/docs/stable/nn.html
+    [48] https://pytorch.org/docs/stable/nn.functional.html
+    [49] https://pytorch.org/docs/stable/nn.html
+    [50] https://pytorch.org/docs/stable/nn.functional.html
+    [51] https://pytorch.org/docs/stable/nn.html
+    [52] https://pytorch.org/docs/stable/nn.functional.html
+    [53] https://pytorch.org/docs/stable/nn.html
+    [54] https://pytorch.org/docs/stable/nn.functional.html
+    [55] https://pytorch.org/docs/stable/nn.html
+    [56] https://pytorch.org/docs/stable/nn.functional.html
+    [57] https://pytorch.org/docs/stable/nn.html
+    [58] https://pytorch.org/docs/stable/nn.functional.html
+    [59] https://pytorch.org/docs/stable/nn.html
+    [60] https://pytorch.org/docs/stable/nn.functional.html
+    [61] https://pytorch.org/docs/stable/nn.html
+    [62] https://pytorch.org/docs/stable/nn.functional.html
+    [63] https://pytorch.org/docs/stable/nn.html
+    [64] https://pytorch.org/docs/stable/nn.functional.html
+    [65] https://pytorch.org/docs/stable/nn.html
+    [66] https://pytorch.org/docs/stable/nn.functional.html
+    [67] https://pytorch.org/docs/stable/nn.html
+    [68] https://pytorch.org/docs/stable/nn.functional.html
+    [69] https://pytorch.org/docs/stable/nn.html
+    [70] https://pytorch.org/docs/stable/nn.functional.html
+    [71] https://pytorch.org/docs/stable/nn.html
+    [72] https://pytorch.org/docs/stable/nn.functional.html
+    [73] https://pytorch.org/docs/stable/nn.html
+    [74] https://pytorch.org/docs/stable/nn.functional.html
+    [75] https://pytorch.org/docs/stable/nn.html
+    [76] https://pytorch.org/docs/stable/nn.functional.html
+    [77] https://pytorch.org/docs/stable/nn.html
+    [78] https://py/n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv1d的API条件生成, 进度1/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv2d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv2d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 2D convolution over an input image composed of several input
+planes.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.Conv2d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+Note:
+    This operator supports complex data types i.e. ``complex32, complex64, complex128``.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iH , iW)`
+    weight: filters of shape :math:`(\text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kH , kW)`
+    bias: optional bias tensor of shape :math:`(\text{out\_channels})`. Default: ``None``
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple `(sH, sW)`. Default: 1
+    padding: implicit paddings on both sides of the input. Can be a string {'valid', 'same'},
+      single number or a tuple `(padH, padW)`. Default: 0
+      ``padding='valid'`` is the same as no padding. ``padding='same'`` pads
+      the input so the output has the same shape as the input. However, this mode
+      doesn't support any stride values other than 1.
+
+      .. warning::
+          For ``padding='same'``, if the ``weight`` is even-length and
+          ``dilation`` is odd in any dimension, a full :func:`pad` operation
+          may be needed internally. Lowering performance.
+
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple `(dH, dW)`. Default: 1
+    groups: split input into groups, both :math:`\text{in\_channels}` and :math:`\text{out\_channels}`
+      should be divisible by the number of groups. Default: 1
+
+Examples::
+
+    >>> # With square kernels and equal stride
+    >>> filters = torch.randn(8, 4, 3, 3)
+    >>> inputs = torch.randn(1, 4, 5, 5)
+    >>> F.conv2d(inputs, filters, padding=1)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    The evaluation will be based on the correctness of the output.
+
+    ---
+    7.References:
+
+    [1] https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html
+    [2] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [3] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [4] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [5] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [6] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [7] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [8] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [9] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [10] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [11] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [12] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [13] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [14] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [15] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [16] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [17] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [18] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [19] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [20] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [21] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [22] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [23] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [24] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [25] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [26] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [27] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [28] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [29] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [30] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [31] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [32] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [33] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [34] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [35] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [36] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [37] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [38] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [39] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [40] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [41] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [42] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [43] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [44] https://pytorch.org/docs/stable/n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv2d的API条件生成, 进度2/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv3d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv3d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 3D convolution over an input image composed of several input
+planes.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.Conv3d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+Note:
+    This operator supports complex data types i.e. ``complex32, complex64, complex128``.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iT , iH , iW)`
+    weight: filters of shape :math:`(\text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kT , kH , kW)`
+    bias: optional bias tensor of shape :math:`(\text{out\_channels})`. Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple `(sT, sH, sW)`. Default: 1
+    padding: implicit paddings on both sides of the input. Can be a string {'valid', 'same'},
+      single number or a tuple `(padT, padH, padW)`. Default: 0
+      ``padding='valid'`` is the same as no padding. ``padding='same'`` pads
+      the input so the output has the same shape as the input. However, this mode
+      doesn't support any stride values other than 1.
+
+      .. warning::
+          For ``padding='same'``, if the ``weight`` is even-length and
+          ``dilation`` is odd in any dimension, a full :func:`pad` operation
+          may be needed internally. Lowering performance.
+
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple `(dT, dH, dW)`. Default: 1
+    groups: split input into groups, :math:`\text{in\_channels}` should be divisible by
+      the number of groups. Default: 1
+
+Examples::
+
+    >>> filters = torch.randn(33, 16, 3, 3, 3)
+    >>> inputs = torch.randn(20, 16, 50, 10, 20)
+    >>> F.conv3d(inputs, filters)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    The evaluation will be based on the completeness and accuracy of the output.
+
+    ---
+    7.References:
+
+    [1] https://pytorch.org/docs/stable/generated/torch.nn.functional.conv3d.html
+    [2] https://pytorch.org/docs/stable/nn.html#conv3d
+    [3] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d
+    [4] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [5] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [6] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [7] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [8] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [9] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [10] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [11] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [12] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [13] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [14] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [15] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [16] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [17] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [18] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [19] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [20] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [21] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [22] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [23] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [24] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [25] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [26] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [27] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [28] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [29] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [30] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [31] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [32] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [33] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [34] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [35] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [36] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [37] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [38] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [39] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [40] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [41] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [42] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [43] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [44] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [45] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [46] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [47] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [48] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [49] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [50] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [51] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [52] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [53] https://pytorch.org/docs/stable/nn.html#torch.nn.Conv3d.forward
+    [54] https://pytorch.org/docs/stable/nn./n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv3d的API条件生成, 进度3/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv1d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv1d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 1D convolution over an input signal composed of several input
+planes.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.Conv1d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+Note:
+    This operator supports complex data types i.e. ``complex32, complex64, complex128``.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iW)`
+    weight: filters of shape :math:`(\text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kW)`
+    bias: optional bias of shape :math:`(\text{out\_channels})`. Default: ``None``
+    stride: the stride of the convolving kernel. Can be a single number or
+      a one-element tuple `(sW,)`. Default: 1
+    padding: implicit paddings on both sides of the input. Can be a string {'valid', 'same'},
+      single number or a one-element tuple `(padW,)`. Default: 0
+      ``padding='valid'`` is the same as no padding. ``padding='same'`` pads
+      the input so the output has the same shape as the input. However, this mode
+      doesn't support any stride values other than 1.
+
+      .. warning::
+          For ``padding='same'``, if the ``weight`` is even-length and
+          ``dilation`` is odd in any dimension, a full :func:`pad` operation
+          may be needed internally. Lowering performance.
+    dilation: the spacing between kernel elements. Can be a single number or
+      a one-element tuple `(dW,)`. Default: 1
+    groups: split input into groups, :math:`\text{in\_channels}` should be divisible by
+      the number of groups. Default: 1
+
+Examples::
+
+    >>> inputs = torch.randn(33, 16, 30)
+    >>> filters = torch.randn(20, 16, 5)
+    >>> F.conv1d(inputs, filters)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    The evaluation will be based on the completeness and accuracy of the output.
+
+    ---
+    7.References:
+
+    [1] https://pytorch.org/docs/stable/generated/torch.nn.functional.conv1d.html
+    [2] https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [3] https://pytorch.org/docs/stable/nn.html
+    [4] https://pytorch.org/docs/stable/nn.functional.html
+    [5] https://pytorch.org/docs/stable/nn.html
+    [6] https://pytorch.org/docs/stable/nn.functional.html
+    [7] https://pytorch.org/docs/stable/nn.html
+    [8] https://pytorch.org/docs/stable/nn.functional.html
+    [9] https://pytorch.org/docs/stable/nn.html
+    [10] https://pytorch.org/docs/stable/nn.functional.html
+    [11] https://pytorch.org/docs/stable/nn.html
+    [12] https://pytorch.org/docs/stable/nn.functional.html
+    [13] https://pytorch.org/docs/stable/nn.html
+    [14] https://pytorch.org/docs/stable/nn.functional.html
+    [15] https://pytorch.org/docs/stable/nn.html
+    [16] https://pytorch.org/docs/stable/nn.functional.html
+    [17] https://pytorch.org/docs/stable/nn.html
+    [18] https://pytorch.org/docs/stable/nn.functional.html
+    [19] https://pytorch.org/docs/stable/nn.html
+    [20] https://pytorch.org/docs/stable/nn.functional.html
+    [21] https://pytorch.org/docs/stable/nn.html
+    [22] https://pytorch.org/docs/stable/nn.functional.html
+    [23] https://pytorch.org/docs/stable/nn.html
+    [24] https://pytorch.org/docs/stable/nn.functional.html
+    [25] https://pytorch.org/docs/stable/nn.html
+    [26] https://pytorch.org/docs/stable/nn.functional.html
+    [27] https://pytorch.org/docs/stable/nn.html
+    [28] https://pytorch.org/docs/stable/nn.functional.html
+    [29] https://pytorch.org/docs/stable/nn.html
+    [30] https://pytorch.org/docs/stable/nn.functional.html
+    [31] https://pytorch.org/docs/stable/nn.html
+    [32] https://pytorch.org/docs/stable/nn.functional.html
+    [33] https://pytorch.org/docs/stable/nn.html
+    [34] https://pytorch.org/docs/stable/nn.functional.html
+    [35] https://pytorch.org/docs/stable/nn.html
+    [36] https://pytorch.org/docs/stable/nn.functional.html
+    [37] https://pytorch.org/docs/stable/nn.html
+    [38] https://pytorch.org/docs/stable/nn.functional.html
+    [39] https://pytorch.org/docs/stable/nn.html
+    [40] https://pytorch.org/docs/stable/nn.functional.html
+    [41] https://pytorch.org/docs/stable/nn.html
+    [42] https://pytorch.org/docs/stable/nn.functional.html
+    [43] https://pytorch.org/docs/stable/nn.html
+    [44] https://pytorch.org/docs/stable/nn.functional.html
+    [45] https://pytorch.org/docs/stable/nn.html
+    [46] https://pytorch.org/docs/stable/nn.functional.html
+    [47] https://pytorch.org/docs/stable/nn.html
+    [48] https://pytorch.org/docs/stable/nn.functional.html
+    [49] https://pytorch.org/docs/stable/nn.html
+    [50] https://pytorch.org/docs/stable/nn.functional.html
+    [51] https://pytorch.org/docs/stable/nn.html
+    [52] https://pytorch.org/docs/stable/nn.functional.html
+    [53] https://pytorch.org/docs/stable/nn.html
+    [54] https://pytorch.org/docs/stable/nn.functional.html
+    [55] https://pytorch.org/docs/stable/nn.html
+    [56] https://pytorch.org/docs/stable/nn.functional.html
+    [57] https://pytorch.org/docs/stable/nn.html
+    [58] https://pytorch.org/docs/stable/nn.functional.html
+    [59] https://pytorch.org/docs/stable/nn.html
+    [60] https://pytorch.org/docs/stable/nn.functional.html
+    [61] https://pytorch.org/docs/stable/nn.html
+    [62] https://pytorch.org/docs/stable/nn.functional.html
+    [63] https://pytorch.org/docs/stable/nn.html
+    [64] https://pytorch.org/docs/stable/nn.functional.html
+    [65] https://pytorch.org/docs/stable/nn.html
+    [66] https://pytorch.org/docs/stable/nn.functional.html
+    [67] https://pytorch.org/docs/stable/nn.html
+    [68] https://pytorch.org/docs/stable/nn.functional.html
+    [69] https://pytorch.org/docs/stable/nn.html
+    [70] https://pytorch.org/docs/stable/nn.functional.html
+    [71] https://pytorch.org/docs/stable/nn.html
+    [72] https://pytorch.org/docs/stable/nn.functional.html
+    [73] https://pytorch.org/docs/stable/nn.html
+    [74] https://pytorch.org/docs/stable/nn.functional.html
+    [75] https://pytorch.org/docs/stable/nn.html
+    [76] https://pytorch.org/docs/stable/nn.functional.html
+    [77] https://pytorch.org/docs/stable/nn.html
+    [78] https://py/n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv1d的API条件生成, 进度1/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv2d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv2d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 2D convolution over an input image composed of several input
+planes.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.Conv2d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+Note:
+    This operator supports complex data types i.e. ``complex32, complex64, complex128``.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iH , iW)`
+    weight: filters of shape :math:`(\text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kH , kW)`
+    bias: optional bias tensor of shape :math:`(\text{out\_channels})`. Default: ``None``
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple `(sH, sW)`. Default: 1
+    padding: implicit paddings on both sides of the input. Can be a string {'valid', 'same'},
+      single number or a tuple `(padH, padW)`. Default: 0
+      ``padding='valid'`` is the same as no padding. ``padding='same'`` pads
+      the input so the output has the same shape as the input. However, this mode
+      doesn't support any stride values other than 1.
+
+      .. warning::
+          For ``padding='same'``, if the ``weight`` is even-length and
+          ``dilation`` is odd in any dimension, a full :func:`pad` operation
+          may be needed internally. Lowering performance.
+
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple `(dH, dW)`. Default: 1
+    groups: split input into groups, both :math:`\text{in\_channels}` and :math:`\text{out\_channels}`
+      should be divisible by the number of groups. Default: 1
+
+Examples::
+
+    >>> # With square kernels and equal stride
+    >>> filters = torch.randn(8, 4, 3, 3)
+    >>> inputs = torch.randn(1, 4, 5, 5)
+    >>> F.conv2d(inputs, filters, padding=1)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    The evaluation will be based on the completeness and accuracy of the output.
+
+    ---
+    7.References:
+
+    [1] https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html
+    [2] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [3] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [4] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [5] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [6] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [7] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [8] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [9] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [10] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [11] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [12] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [13] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [14] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [15] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [16] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [17] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [18] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [19] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [20] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [21] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [22] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [23] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [24] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [25] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [26] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [27] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [28] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [29] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [30] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [31] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [32] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [33] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [34] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [35] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [36] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [37] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [38] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [39] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [40] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [41] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [42] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [43] https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d
+    [44] https://pytorch.org//n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv2d的API条件生成, 进度2/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv3d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv3d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 3D convolution over an input image composed of several input
+planes.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.Conv3d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+Note:
+    This operator supports complex data types i.e. ``complex32, complex64, complex128``.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iT , iH , iW)`
+    weight: filters of shape :math:`(\text{out\_channels} , \frac{\text{in\_channels}}{\text{groups}} , kT , kH , kW)`
+    bias: optional bias tensor of shape :math:`(\text{out\_channels})`. Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple `(sT, sH, sW)`. Default: 1
+    padding: implicit paddings on both sides of the input. Can be a string {'valid', 'same'},
+      single number or a tuple `(padT, padH, padW)`. Default: 0
+      ``padding='valid'`` is the same as no padding. ``padding='same'`` pads
+      the input so the output has the same shape as the input. However, this mode
+      doesn't support any stride values other than 1.
+
+      .. warning::
+          For ``padding='same'``, if the ``weight`` is even-length and
+          ``dilation`` is odd in any dimension, a full :func:`pad` operation
+          may be needed internally. Lowering performance.
+
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple `(dT, dH, dW)`. Default: 1
+    groups: split input into groups, :math:`\text{in\_channels}` should be divisible by
+      the number of groups. Default: 1
+
+Examples::
+
+    >>> filters = torch.randn(33, 16, 3, 3, 3)
+    >>> inputs = torch.randn(20, 16, 50, 10, 20)
+    >>> F.conv3d(inputs, filters)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    """
+
+    # TODO: 1. 
+    # 1.1. 
+    # 1.2. 
+    # 1.3. 
+    # 1.4. 
+    # 1.5. 
+    # 1.6. 
+    # 1.7. 
+    # 1.8. 
+    # 1.9. 
+    # 1.10. 
+    # 1.11. 
+    # 1.12. 
+    # 1.13. 
+    # 1.14. 
+    # 1.15. 
+    # 1.16. 
+    # 1.17. 
+    # 1.18. 
+    # 1.19. 
+    # 1.20. 
+    # 1.21. 
+    # 1.22. 
+    # 1.23. 
+    # 1.24. 
+    # 1.25. 
+    # 1.26. 
+    # 1.27. 
+    # 1.28. 
+    # 1.29. 
+    # 1.30. 
+    # 1.31. 
+    # 1.32. 
+    # 1.33. 
+    # 1.34. 
+    # 1.35. 
+    # 1.36. 
+    # 1.37. 
+    # 1.38. 
+    # 1.39. 
+    # 1.40. 
+    # 1.41. 
+    # 1.42. 
+    # 1.43. 
+    # 1.44. 
+    # 1.45. 
+    # 1.46. 
+    # 1.47. 
+    # 1.48. 
+    # 1.49. 
+    # 1.50. 
+    # 1.51. 
+    # 1.52. 
+    # 1.53. 
+    # 1.54. 
+    # 1.55. 
+    # 1.56. 
+    # 1.57. 
+    # 1.58. 
+    # 1.59. 
+    # 1.60. 
+    # 1.61. 
+    # 1.62. 
+    # 1.63. 
+    # 1.64. 
+    # 1.65. 
+    # 1.66. 
+    # 1.67. 
+    # 1.68. 
+    # 1.69. 
+    # 1.70. 
+    # 1.71. 
+    # 1.72. 
+    # 1.73. 
+    # 1.74. 
+    # 1.75. 
+    # 1.76. 
+    # 1.77. 
+    # 1.78. 
+    # 1.79. 
+    # 1.80. 
+    # 1.81. 
+    # 1.82. 
+    # 1.83. 
+    # 1.84. 
+    # 1.85. 
+    # 1.86. 
+    # 1.87. 
+    # 1.88. 
+    # 1.89. 
+    # 1.90. 
+    # 1.91. 
+    # 1.92. 
+    # 1.93. 
+    # 1.94. 
+    # 1.95. 
+    # 1.96. 
+    # 1.97. 
+    # 1.98. 
+    # 1.99. 
+    # 1.100. 
+    # 1.101. 
+    # 1.102. 
+    # 1.103. 
+    # 1.104. 
+    # 1.105. 
+    # 1.106. 
+    # 1.107. 
+    # 1.108. 
+    # 1.109. 
+    # 1.110. 
+    # 1.111. 
+    # 1.112. 
+    # 1.113. 
+    # 1.114. 
+    # 1.115. 
+    # 1.116. 
+    # 1.117. 
+    # 1.118. 
+    # 1.119. 
+    # 1.120. 
+    # 1.121. 
+    # 1.122. 
+    # 1.123. 
+    # 1.124. 
+    # 1.125. 
+    # 1.126. 
+    # 1.127. 
+    # 1.128. 
+    # 1.129. 
+    # 1.130. 
+    # 1.131. 
+    # 1.132. 
+    # 1.133. 
+    # 1.134. 
+    # 1.135. 
+    # 1.136. 
+    # 1.137. 
+    # 1.138. 
+    # 1.139. 
+    # 1.140. 
+    # 1.141. 
+    # 1.142. 
+    # 1.143. 
+    # 1.144. 
+    # 1.145. 
+    # 1.146. 
+    # 1.147. 
+    # 1.148. 
+    # 1.149. 
+    # 1.150. 
+    # 1.151. 
+    # 1.152. 
+    # 1.153. 
+    # 1.154. 
+    # 1.155. 
+    # 1.156. 
+    # 1.157. 
+    # 1.158. 
+    # 1.159. 
+    # 1.160. 
+    # 1.161. 
+    # 1.162. 
+    # 1.163. 
+    # 1.164. 
+    # 1.165. 
+    # 1.166. 
+    # 1.167. 
+    # 1.168. 
+    # 1.169. 
+    # 1.170. 
+    # 1.171. 
+    # 1./n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv3d的API条件生成, 进度3/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv_transpose1d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv_transpose1d(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1) -> Tensor
+
+Applies a 1D transposed convolution operator over an input signal
+composed of several input planes, sometimes also called "deconvolution".
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.ConvTranspose1d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iW)`
+    weight: filters of shape :math:`(\text{in\_channels} , \frac{\text{out\_channels}}{\text{groups}} , kW)`
+    bias: optional bias of shape :math:`(\text{out\_channels})`. Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple ``(sW,)``. Default: 1
+    padding: ``dilation * (kernel_size - 1) - padding`` zero-padding will be added to both
+      sides of each dimension in the input. Can be a single number or a tuple
+      ``(padW,)``. Default: 0
+    output_padding: additional size added to one side of each dimension in the
+      output shape. Can be a single number or a tuple ``(out_padW)``. Default: 0
+    groups: split input into groups, :math:`\text{in\_channels}` should be divisible by the
+      number of groups. Default: 1
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple ``(dW,)``. Default: 1
+
+Examples::
+
+    >>> inputs = torch.randn(20, 16, 50)
+    >>> weights = torch.randn(16, 33, 5)
+    >>> F.conv_transpose1d(inputs, weights)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    We will evaluate your output based on the following criteria:
+
+    - Completeness: Did you complete all the required information extraction?
+    - Accuracy: Did you accurately identify the parameter types and relationships?
+    - Formatting: Did you format your output in accordance with the above instructions?
+
+    ---
+    7.Submission:
+
+    Please submit your output as a JSON file.
+
+    ---
+    8.References:
+
+    [torch]: https://pytorch.org/docs/stable/index.html
+    [fun_string]: https://pytorch.org/docs/stable/generated/torch.nn.functional.conv_transpose1d.html
+    [torch.nn.functional.conv_transpose1d]: https://pytorch.org/docs/stable/generated/torch.nn.functional.conv_transpose1d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch.nn.Conv1d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [torch.nn.Conv2d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [torch.nn.Conv3d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch.nn.Conv1d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [torch.nn.Conv2d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [torch.nn.Conv3d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch.nn.Conv1d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [torch.nn.Conv2d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [torch.nn.Conv3d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch.nn.Conv1d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [torch.nn.Conv2d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [torch.nn.Conv3d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch.nn.Conv1d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [torch.nn.Conv2d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [torch.nn.Conv3d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch.nn.Conv1d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    [torch.nn.Conv2d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    [torch.nn.Conv3d]: https://pytorch.org/docs/stable/generated/torch.nn.Conv3d.html
+    [torch.nn.ConvTranspose1d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+    [torch.nn.ConvTranspose2d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [torch.nn.ConvTranspose3d]: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose3d.html
+    [torch/n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv_transpose1d的API条件生成, 进度4/643
+模型输出：/n
+    1. Role:
+        You are an expert in [torch], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    ---
+    2. Background and Context:
+
+    (1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [torch.nn.functional.conv_transpose2d]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The specific API documentation content is as below:
+    [
+conv_transpose2d(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1) -> Tensor
+
+Applies a 2D transposed convolution operator over an input image
+composed of several input planes, sometimes also called "deconvolution".
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+See :class:`~torch.nn.ConvTranspose2d` for details and output shape.
+
+Note:
+    In some circumstances when given tensors on a CUDA device and using CuDNN, this operator may select a nondeterministic algorithm to increase performance. If this is undesirable, you can try to make the operation deterministic (potentially at a performance cost) by setting ``torch.backends.cudnn.deterministic = True``. See :doc:`/notes/randomness` for more information.
+
+
+Args:
+    input: input tensor of shape :math:`(\text{minibatch} , \text{in\_channels} , iH , iW)`
+    weight: filters of shape :math:`(\text{in\_channels} , \frac{\text{out\_channels}}{\text{groups}} , kH , kW)`
+    bias: optional bias of shape :math:`(\text{out\_channels})`. Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple ``(sH, sW)``. Default: 1
+    padding: ``dilation * (kernel_size - 1) - padding`` zero-padding will be added to both
+      sides of each dimension in the input. Can be a single number or a tuple
+      ``(padH, padW)``. Default: 0
+    output_padding: additional size added to one side of each dimension in the
+      output shape. Can be a single number or a tuple ``(out_padH, out_padW)``.
+      Default: 0
+    groups: split input into groups, :math:`\text{in\_channels}` should be divisible by the
+      number of groups. Default: 1
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple ``(dH, dW)``. Default: 1
+
+Examples::
+
+    >>> # With square kernels and equal stride
+    >>> inputs = torch.randn(1, 4, 5, 5)
+    >>> weights = torch.randn(4, 8, 3, 3)
+    >>> F.conv_transpose2d(inputs, weights, padding=1)
+]
+
+    (2) Parameter Dependency Types.
+
+    In deep learning libraries such as [torch], many APIs accept a set of configurable parameters, enabling multiple usage patterns based on different parameter combinations. 
+    These parameters may exhibit various types of interdependencies that govern valid and efficient usage. Specifically, we consider the following three relationship types:
+
+    - "Mandatory Parameters": Parameters that must be explicitly specified for the API to function correctly.  
+    - "Mutual Exclusion Parameter Pairs": Pairs of parameters that cannot be used together in a single call due to logical or operational conflicts.  
+    - "Conditional Mutual Exclusion Parameter Pairs" refer to parameter pairs that are not universally mutually exclusive but become incompatible only under specific conditions. In these cases, the mutual exclusion depends on certain value combinations, e.g., the parameters conflict only when both assume particular values or satisfy certain conditions based on their assigned values. Thus, these are a subset of "Mutual Exclusion Parameter Pairs" that exhibit conditional, rather than absolute, exclusivity.
+    - "Mandatory coexistence parameters": Sets of parameters that must be provided together to ensure valid configuration or meaningful behavior.
+    - "Conditional Mutual Exclusion Parameters": When the parameters meet certain conditions, it will prevent the function from running.
+
+    ---
+    3. Your Tasks:
+
+    Based on the documentation and definitions provided:
+
+    1. Determine the Type of Each Parameter.
+    For each explicitly defined parameter in [fun_string], determine its type, such as: tensor, int, str, optional tensor, etc.
+    2. Identify Parameter Dependency Structures as accurately and completely as possible:
+    - List all "Mandatory Parameters"  
+    - Identify any "Mutual Exclusion Parameter Pairs"  
+    - Identify any "Conditional Mutual Exclusion Parameter Pairs" 
+    - Identify any "Mandatory Coexistence Parameters"
+
+    ---
+    4.Output Format:
+    
+    {
+    "Parameter type": {
+        "input": "...",
+        "weight": "...",
+        "bias": "...",
+        "stride": "...",
+        "padding": "...",
+        "dilation": "...",
+        "groups": "..."
+    },
+    "Mandatory Parameters": ["...", "..."],
+    "Mutually Exclusive Parameter Pairs": [["...", "..."], ...],
+    "Mandatory Coexistence Parameters": [["...", "...", "..."], ["...", "..."], ...],
+    "Conditional Mutual Exclusion Parameters":["para_1", "para_2","(para_1>1)&(para_2>1)"] 
+    }
+
+    ---
+    5.Examples:
+    Output Examples: 
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+    
+    Please complete the corresponding information extraction based on the above content (output JSON directly):
+    
+    {
+    "Parameter type": {
+    "input": "Tensor (shape: (minibatch, in_channels, iW))",
+    "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
+    "bias": "Optional[Tensor] (shape: (out_channels))",
+    "stride": "Union[int, Tuple[int]] (default: 1)",
+    "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid', 'same')",
+    "dilation": "Union[int, Tuple[int]] (default: 1)",
+    "groups": "int (default: 1)"
+    },
+    "Mandatory Parameters": ["input", "weight"],
+    "Mutually Exclusive Parameter Pairs": [],
+    "Mandatory Coexistence Parameters": [],
+    "Conditional Mutual Exclusion Parameters": ["strides", "dilation","(strides>1)&(dilation>1)"] 
+    }
+
+    ---
+    6.Evaluation:
+
+    We will evaluate your output based on the following criteria:
+
+    - Completeness: Did you complete all the required information extraction?
+    - Accuracy: Did you accurately identify the parameter types and relationships?
+    - Formatting: Did you format your output in accordance with the above instructions?
+
+    ---
+    7.Submission:
+
+    Please submit your output as a JSON file.
+
+    ---
+    8.References:
+
+    [1] https://pytorch.org/docs/stable/generated/torch.nn.functional.conv_transpose2d.html
+    [2] https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
+    [3] https://pytorch.org/docs/stable/nn.html
+    [4] https://pytorch.org/docs/stable/nn.functional.html
+    [5] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [6] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [7] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [8] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [9] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [10] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [11] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [12] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [13] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [14] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [15] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [16] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [17] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [18] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [19] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [20] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [21] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [22] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [23] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [24] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [25] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [26] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [27] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [28] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [29] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [30] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [31] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [32] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [33] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [34] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [35] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [36] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [37] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [38] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [39] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [40] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [41] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [42] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [43] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [44] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [45] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [46] https://pytorch.org/docs/stable/nn.functional.html#torch.nn.functional.conv_transpose2d
+    [47] https://pytorch.org/docs/stable/nn.html#torch.nn.ConvTranspose2d
+    [48] https://pytorch.org/docs/stable/nn.functional.html#torch/n ______________________________________________________________________________________________________________________
+已完成torch.nn.functional.conv_transpose2d的API条件生成, 进度5/643

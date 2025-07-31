@@ -35,33 +35,12 @@ def generate_api_conditions(api_names):
         
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法
-        inputs = tokenizer(
-            prompt_1,
-            return_tensors="pt",
-            truncation=True,
-            max_length=2048,
-            padding=True
-        )
+        inputs = generate_input(prompt_1, tokenizer, model)
 
-        # inputs = tokenizer.apply_chat_template(
-        #     prompt_1,
-        #     return_tensors="pt",
-        #     truncation=True,
-        #     max_length=2048,
-        #     padding=True
-        # )
         # 把inputs放到模型参数所在设备
         inputs = inputs.to(next(model.parameters()).device)
 
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=2048,  # 可以更大
-            do_sample=False,      # 启用采样
-            temperature=1.0,     # 增加多样性
-            top_p=1.0,
-            eos_token_id=tokenizer.eos_token_id,
-            pad_token_id=tokenizer.pad_token_id
-        )
+        outputs = generate_output(inputs, model, tokenizer)
         # 解码输出
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
         add_log("模型输出：/n" + outputs_text + "/n ______________________________________________________________________________________________________________________")

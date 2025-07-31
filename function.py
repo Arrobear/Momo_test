@@ -231,4 +231,58 @@ def handle_output(text: str, model_path: str):
             return after_think
         except json.JSONDecodeError as e:
             return None
+
+# 封装不同模型的输入输出模式 
+def generate_input(prompt, tokenizer, model):
+
+    model_path_list = [
+        "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
+        "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+    ]
+
+    if model_path not in model_path_list:
     
+        inputs = tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=2048,
+            padding=True
+        )
+    else:
+        inputs = tokenizer.apply_chat_template(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=2048,
+            padding=True
+        )
+    return inputs
+
+def generate_output(inputs, model, tokenizer):
+    model_path_list = [
+        "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
+        "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+    ]
+
+    if model_path not in model_path_list:
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=2048,  # 可以更大
+            do_sample=False,      # 启用采样
+            temperature=1.0,     # 增加多样性
+            top_p=1.0,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id
+        )
+    else:
+        outputs = model.generate(
+            inputs,
+            max_new_tokens=2048,  # 可以更大
+            do_sample=False,      # 启用采样
+            temperature=1.0,     # 增加多样性
+            top_p=1.0,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id
+        )
+    return outputs
