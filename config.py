@@ -11,8 +11,8 @@ import sys
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
-model_path = "/nasdata/haoyahui/Model/codellama-13b"
-# model_path = "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+# model_path = "/nasdata/haoyahui/Model/codellama-13b"
+model_path = "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 

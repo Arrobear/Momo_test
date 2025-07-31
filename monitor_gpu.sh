@@ -3,6 +3,8 @@
 # 设置你要运行的 Python 程序路径
 PYTHON_SCRIPT="/nasdata/haoyahui/Momo_test/main.py"
 
+PYTHON_SCRIPT_M="/nasdata/haoyahui/Momo_test/monitor_gpu.py"
+
 # 显存使用阈值（单位：MiB）
 THRESHOLD=5000
 
@@ -39,7 +41,14 @@ while true; do
 
         # 等待 Python 程序运行完成
         wait $PID
-        echo "程序执行完毕，退出监控脚本"
+        echo "程序执行完毕"
+
+        python "$PYTHON_SCRIPT_M" &
+        MONITOR_PID=$!
+        echo "监控脚本已启动，PID: $MONITOR_PID"
+        # 等待监控脚本运行完成
+        wait $MONITOR_PID
+        echo "监控脚本执行完毕，退出脚本"
         exit 0
     fi
 

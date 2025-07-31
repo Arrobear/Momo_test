@@ -4,9 +4,9 @@ import os
 import subprocess
 
 # ======== 配置区域 ========
-GPU_INDICES = [0, 4]  # 要抢占的 GPU 编号
-TARGET_MB = 60000     # 每张卡的目标显存（MiB）
-ALLOC_MB = 256        # 每次分配大小（MiB）
+GPU_INDICES = [1]  # 要抢占的 GPU 编号
+TARGET_MB = 80000     # 每张卡的目标显存（MiB）
+ALLOC_MB = 4096        # 每次分配大小（MiB）
 
 SHELL_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -44,20 +44,10 @@ try:
                 time.sleep(1)
 
         if triggered:
-            break
+            while True:
+                time.sleep(1)
         time.sleep(0.1)
-
 except KeyboardInterrupt:
     print("被手动中断，释放显存")
 
-# 显存释放
-for gpu in GPU_INDICES:
-    del tensors[gpu]
-torch.cuda.empty_cache()
 
-# 执行 shell 脚本
-if os.path.isfile(SHELL_SCRIPT):
-    print(f"执行脚本：{SHELL_SCRIPT}")
-    os.system(f"bash {SHELL_SCRIPT}")
-else:
-    print(f"错误：找不到脚本文件 {SHELL_SCRIPT}")
