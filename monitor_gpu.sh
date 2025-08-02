@@ -44,7 +44,7 @@ while true; do
         wait $PID
         echo "程序执行完毕"
 
-        python "$PYTHON_SCRIPT_M" &
+        FREE_GPUS="$AVAILABLE_GPUS" python "$PYTHON_SCRIPT_M" &
         MONITOR_PID=$!
         echo "监控脚本已启动，PID: $MONITOR_PID"
         # 等待监控脚本运行完成
