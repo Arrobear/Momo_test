@@ -37,6 +37,7 @@ while true; do
         # 通过环境变量传给 Python
         FREE_GPUS="$AVAILABLE_GPUS" python "$PYTHON_SCRIPT" &
         PID=$!
+        echo "模型程序已启动，PID: $PID"
         EXECUTED=1
 
         # 等待 Python 程序运行完成

@@ -15,8 +15,8 @@ def generate_api_conditions(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # model = AutoModelForCausalLM.from_pretrained(model_path,device_map={"": gpu_ids[0]} )
-    # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+    model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
+    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
     # , load_in_8bit=True
     i = 0
 
@@ -51,8 +51,8 @@ def generate_api_conditions(api_names):
         append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
         add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
-        if i >= len(api_names):
-        #if i >= 50:
+        #if i >= len(api_names):
+        if i >= 50:
             break
 
 def base_condition_filter(api_names):

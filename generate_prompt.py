@@ -97,7 +97,7 @@ def generate_prompt_1(fun_string, api_doc):
     notion_2 = '''
     Please complete the corresponding information extraction based on the above content (output JSON directly):
     '''
-    if model_path in["/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B" , "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct", "/nasdata/haoyahui/Model/starcoder2-15b"]:
+    if model_path in["/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B" , "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"]:
         ori_prompt_1 = ori_prompt + notion_1
         prompt = [
             {"role": "user", "content": ori_prompt_1}
