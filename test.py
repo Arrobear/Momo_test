@@ -10,8 +10,11 @@ def log_analysis():
         print(log_list[i])
         if i > 10:
             break   
-log_analysis()
+# log_analysis()
 
+
+
+print(get_doc("torch.nn.functional.rrelu"))
 
 # gpu_str = os.environ.get("FREE_GPUS", "")
 

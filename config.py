@@ -16,7 +16,7 @@ model_path = "/nasdata/haoyahui/Model/codellama-13b"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
-lib_name = "tf"  # 库名称
+lib_name = "torch"  # 库名称
 
 gpu_str = os.environ.get("FREE_GPUS", "")
 

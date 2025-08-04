@@ -26,13 +26,53 @@ append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件
 add_log(log)：打印日志到控制台和文件
 '''
 
+def filter_apidocument(api_doc):
+    # 定义正则表达式模式，匹配See :class:`~到` for more details.之间的内容
+    pattern = r'See :class:`~(.*?)` for more details\.'
+    match = re.search(pattern, api_doc)
+    if match:
+        return match.group(1)  # 返回捕获组中的内容
+    return None  # 如果没有匹配到，返回None
+
 #根据函数名获取函数的文档字符串
 def get_doc(function_name):
-    try:
-        function = eval(function_name)
-        return function.__doc__
-    except (AttributeError, ImportError, NameError) as e:
-        return False
+    if lib_name == "torch":
+        if function_name.endswith("_"):
+            function_name_ = function_name[:-1]
+            try:
+                function = eval(function_name)
+                api_doc_1 = function.__doc__
+            except (AttributeError, ImportError, NameError) as e:
+                return False
+            try:
+                function = eval(function_name_)
+                api_doc_2 = function.__doc__
+            except (AttributeError, ImportError, NameError) as e:
+                return False
+            
+            return api_doc_1 + '\n' + api_doc_2 + '\n' + get_doc(function_name_)
+        
+        try:
+            function = eval(function_name)
+            api_doc = function.__doc__
+    
+        except (AttributeError, ImportError, NameError) as e:
+            return False
+        
+        if "Args:" in api_doc:
+            return api_doc
+        else:
+            func_name = filter_apidocument(api_doc)
+            return get_doc(func_name)
+        
+
+    elif lib_name == "tf":
+        try:
+            function = eval(function_name)
+            api_doc = function.__doc__
+        except (AttributeError, ImportError, NameError) as e:
+            return False
+        return api_doc
 
 
 #根据函数文档获取参数列表
