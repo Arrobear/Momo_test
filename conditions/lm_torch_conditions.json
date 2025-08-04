@@ -14,7 +14,12 @@
             "weight"
         ],
         "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
+        "Mandatory Coexistence Parameters": [
+            [
+                "weight",
+                "bias"
+            ]
+        ],
         "Conditional Mutual Exclusion Parameters": [
             "strides",
             "dilation",
@@ -23,8 +28,8 @@
     },
     "torch.nn.functional.conv3d": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels, iT, iH))",
-            "weight": "Tensor (shape: (out_channels, in_channels // groups by kW))",
+            "input": "Tensor (shape: (minibatch, in_channels, iT iH iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups kT kH kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
             "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
@@ -36,11 +41,16 @@
             "weight"
         ],
         "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
+        "Mandatory Coexistence Parameters": [
+            [
+                "input",
+                "weight"
+            ]
+        ],
         "Conditional Mutual Exclusion Parameters": [
-            "stride",
+            "strides",
             "dilation",
-            "(stride>1)&(dilation>1)"
+            "(strides>1)&(dilation>1)"
         ]
     },
     "torch.nn.functional.conv_transpose1d": {
@@ -65,28 +75,6 @@
             "(stride>1)&(dilation>1)"
         ]
     },
-    "torch.nn.functional.conv_transpose2d": {
-        "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels, iW))",
-            "weight": "Tensor (shape: (out_channels, in_channels // groups, kW))",
-            "bias": "Optional[Tensor] (shape: (out_channels))",
-            "stride": "Union[int, Tuple[int]] (default: 1)",
-            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int] (default: 1)",
-            "groups": "int (default: 1)"
-        },
-        "Mandatory Parameters": [
-            "input",
-            "weight"
-        ],
-        "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
-        "Conditional Mutual Exclusion Parameters": [
-            "strides",
-            "dilation",
-            "(strides>1)&(dilation>1)"
-        ]
-    },
     "torch.nn.functional.conv_transpose3d": {
         "Parameter type": {
             "input": "Tensor (shape: (minibatch, in_channels, iW))",
@@ -102,7 +90,12 @@
             "weight"
         ],
         "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
+        "Mandatory Coexistence Parameters": [
+            [
+                "input",
+                "weight"
+            ]
+        ],
         "Conditional Mutual Exclusion Parameters": [
             "strides",
             "dilation",
@@ -111,12 +104,12 @@
     },
     "torch.nn.functional.unfold": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
-            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
-            "stride": "Union[int,, Tuple[int]] (default: 1)",
-            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int  Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -136,9 +129,9 @@
             "input": "Tensor (shape: (minibatch, in_channels iW))",
             "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
-            "stride": "Union[int Tuple[int]] (default: 1)",
-            "padding": "Union[int Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int Tuple[int]] (default: 1)",
+            "stride": "Union[int, Tuple[int]] (default: 1)",
+            "padding": "Union[int  Tuple[int], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -176,7 +169,7 @@
     },
     "torch.nn.functional.avg_pool2d": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "input": "Tensor (shape: (minibatch, in_channels iH iW))",
             "kernel_size": "Union[int, Tuple[int]]",
             "stride": "Union[int, Tuple[int]] (default: kernel_size)",
             "padding": "Union[int, Tuple[int], str] (default: 0)",
@@ -203,7 +196,7 @@
         "Conditional Mutual Exclusion Parameters": [
             "padding",
             "ceil_mode",
-            "(padding!='valid')&(ceil_mode==True)"
+            "(padding>0)&(ceil_mode=True)"
         ]
     },
     "torch.nn.functional.avg_pool3d": {
@@ -244,7 +237,7 @@
             "kernel_size": "Union[int, Tuple[int]]",
             "stride": "Union[int, Tuple[int]] (default: kernel_size)",
             "padding": "Union[int, Tuple[int], str] (default: 0)",
-            "dilation": "Union[int, Tuple[int]] (default: 1)",
+            "dilation": "Union[int] (default: 1)",
             "ceil_mode": "bool (default: False)",
             "return_indices": "bool (default: False)"
         },
@@ -267,8 +260,8 @@
             "stride": "Union[int, Tuple[int]] (default: kernel_size)",
             "padding": "Union[int, Tuple[int], str] (default: 0)",
             "dilation": "Union[int] (default: 1)",
-            "ceil_mode": "bool",
-            "return_indices": "bool"
+            "ceil_mode": "bool (default: False)",
+            "return_indices": "bool (default: False)"
         },
         "Mandatory Parameters": [
             "input",
@@ -289,12 +282,12 @@
     },
     "torch.nn.functional.max_unpool1d": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels iW))",
-            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
+            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
-            "stride": "Union[int, Tuple[int]] (default: 1)",
-            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int] (default: 1)",
+            "stride": "Union[int,, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -333,12 +326,12 @@
     },
     "torch.nn.functional.max_unpool3d": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels iW))",
-            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
+            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
-            "stride": "Union[int, Tuple[int]] (default: 1)",
-            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int  Tuple[int]] (default: 1)",
+            "stride": "Union[int,, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -355,8 +348,8 @@
     },
     "torch.nn.functional.lp_pool1d": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels, iW))",
-            "weight": "Tensor (shape: (out_channels, in_channels // groups kW))",
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
+            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
             "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
@@ -468,12 +461,12 @@
     },
     "torch.nn.functional.threshold": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels iW))",
-            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "input": "Tensor (shape: (minibatch, in_channels, iW))",
+            "weight": "Tensor (shape: (out_channels, in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
             "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int Tuple[int]] (default: 1)",
+            "dilation": "Union[int] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -491,13 +484,7 @@
     "torch.nn.functional.threshold_": {
         "Parameter type": {
             "input": "Tensor",
-            "threshold": "Tensor",
-            "weight": "Tensor",
-            "bias": "Optional[Tensor]",
-            "stride": "Union[int, Tuple[int]]",
-            "padding": "Union[int, Tuple[int], str]",
-            "dilation": "Union[int, Tuple[int]]",
-            "groups": "int"
+            "threshold": "Tensor"
         },
         "Mandatory Parameters": [
             "input",
@@ -539,10 +526,10 @@
     },
     "torch.nn.functional.hardtanh": {
         "Parameter type": {
-            "input": "Tensor (min_val=-1,, max_val=1,, inplace=False)",
-            "min_val": "int",
-            "max_val": "int",
-            "inplace": "bool"
+            "input": "Tensor (min_val=-1, max_val=1(inplace=False)",
+            "min_val": "int (default: -1)",
+            "max_val": "int (default: 1)",
+            "inplace": "bool (default: False)"
         },
         "Mandatory Parameters": [
             "input",
@@ -555,7 +542,7 @@
     },
     "torch.nn.functional.hardtanh_": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch,, in_channels, iW))",
+            "input": "Tensor (min_val=-1,, max_val=1)",
             "min_val": "int (default: -1)",
             "max_val": "int (default: 1)"
         },
@@ -617,12 +604,24 @@
     },
     "torch.nn.functional.selu": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch, in_channels iW))",
-            "inplace": "bool (default: False)"
+            "input": "Tensor (inplace=False)",
+            "inplace": "bool (default=False)"
         },
         "Mandatory Parameters": [
             "input",
             "inplace"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nn.functional.leaky_relu": {
+        "Parameter type": {
+            "input": "Tensor",
+            "negative_slope": "float (default: 0.01)"
+        },
+        "Mandatory Parameters": [
+            "input"
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
@@ -634,7 +633,8 @@
             "negative_slope": "float (default: 0.01)"
         },
         "Mandatory Parameters": [
-            "input"
+            "input",
+            "negative_slope"
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
@@ -728,11 +728,7 @@
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
-        "Conditional Mutual Exclusion Parameters": [
-            "stride",
-            "dilation",
-            "(stride>1)&(dilation>1)"
-        ]
+        "Conditional Mutual Exclusion Parameters": []
     },
     "torch.nn.functional.softsign": {
         "Parameter type": {
@@ -745,7 +741,8 @@
             "groups": "int"
         },
         "Mandatory Parameters": [
-            "input"
+            "input",
+            "weight"
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
@@ -781,10 +778,6 @@
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
-        "Conditional Mutual Exclusion Parameters": [
-            "dtype",
-            "input",
-            "(dtype is not None)&(input is not None)"
-        ]
+        "Conditional Mutual Exclusion Parameters": []
     }
 }

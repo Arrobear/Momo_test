@@ -26,7 +26,7 @@
     },
     "tf.math.acosh": {
         "Parameter type": {
-            "x": "Tensor (bfloat16, half, float32, float64, complex64, complex128)"
+            "x": "Tensor (type: bfloat16, half, float32, float64, complex64, complex128)"
         },
         "Mandatory Parameters": [
             "x"
@@ -37,12 +37,12 @@
     },
     "tf.keras.preprocessing.image.apply_affine_transform": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch,,,,,,,,,,,,,,,,,,,,,,,, the parameters that are used together to ensure valid configuration or meaningful behavior.",
-            "weight": "Tensor (shape: (out_channels, in_channels // groups kW))",
+            "input": "Tensor (shape: (minibatch,, in_channels,, iW))",
+            "weight": "Tensor (shape: (out_channels,, in_channels // groups, kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
-            "stride": "Union[int, Tuple[int]] (default: 1)",
-            "padding": "Union[int  Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int] Tuple[int]] (default: 1)",
+            "stride": "Union[int,, Tuple[int]] (default: 1)",
+            "padding": "Union[int, Tuple[int]], str] (default: 0; options: 'valid','same')",
+            "dilation": "Union[int, Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -57,31 +57,6 @@
             "(stride>1)&(dilation>1)"
         ]
     },
-    "tf.io.parse_single_sequence_example": {
-        "Parameter Type": {
-            "serialized": "Tensor (shape: (string))",
-            "context_features": "dict (keys: string, values: FixedLenFeature, VarLenFeature, RaggedFeature)",
-            "sequence_features": "dict (keys: string, values: FixedLenSequenceFeature, VarLenFeature, RaggedFeature)",
-            "example_name": "Optional[Tensor] (shape: (string))"
-        },
-        "Mandatory Parameters": [
-            "serialized",
-            "context_features",
-            "sequence_features"
-        ],
-        "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [
-            [
-                "context_features",
-                "sequence_features"
-            ]
-        ],
-        "Conditional Mutual Exclusion Parameters": [
-            "example_name",
-            "sequence_features",
-            "(example_name is not None)&(sequence_features is not empty)"
-        ]
-    },
     "tf.experimental.numpy.real": {
         "Parameter type": {
             "input": "Tensor (shape: (minibatch, in_channels iW))",
@@ -89,7 +64,7 @@
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
             "padding": "Union[int  Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int] (default: 1)",
+            "dilation": "Union[int  Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -134,25 +109,6 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
-    "tf.nn.embedding_lookup": {
-        "Parameter type": {
-            "params": "Tensor (shape: (batch_size, num_embeddings, embedding_dim))",
-            "ids": "Tensor (shape: (num_ids,))",
-            "max_norm": "Optional[float] (default: None)",
-            "name": "Optional[str] (default: None)"
-        },
-        "Mandatory Parameters": [
-            "params",
-            "ids"
-        ],
-        "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
-        "Conditional Mutual Exclusion Parameters": [
-            "max_norm",
-            "params",
-            "(max_norm is not None)&(params is not empty)"
-        ]
-    },
     "tf.linalg.slogdet": {
         "Parameter type": {
             "input": "Tensor (shape: [N, M, M])",
@@ -167,7 +123,7 @@
     },
     "tf.keras.preprocessing.text.text_to_word_sequence": {
         "Parameter type": {
-            "input": "Tensor (shape: (minibatch,,,,,,,,,,,,,,,,,,,,,,,,,,,, the out_channels iW))",
+            "input": "Tensor (shape: (minibatch, in_channels iW))",
             "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
@@ -191,7 +147,7 @@
         "Parameter type": {
             "type_value": "Union[tf.DType, str, np.dtype]",
             "input": "Tensor (shape: (minibatch, in_channels, iW))",
-            "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
+            "weight": "Tensor (shape: (out_channels in in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
             "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
@@ -220,57 +176,6 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
-    "tf.keras.metrics.TopKCategoricalAccuracy": {
-        "Parameter type": {
-            "k": "Optional[int] (default: 5)",
-            "name": "Optional[str]",
-            "dtype": "Optional[Dtype]"
-        },
-        "Mandatory Parameters": [
-            "k"
-        ],
-        "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
-        "Conditional Mutual Exclusion Parameters": []
-    },
-    "tf.keras.optimizers.SGD": {
-        "Parameter type": {
-            "learning_rate": "Float (default: 0.01)",
-            "momentum": "Float (default: 0.0)",
-            "nesterov": "Boolean (default: False)",
-            "name": "String",
-            "weight_decay": "Float",
-            "clipnorm": "Float",
-            "clipvalue": "Float",
-            "global_clipnorm": "Float",
-            "use_ema": "Boolean (default: False)",
-            "ema_momentum": "Float (default: 0.99)",
-            "ema_overwrite_frequency": "Int or None (default: None)"
-        },
-        "Mandatory Parameters": [
-            "learning_rate",
-            "momentum"
-        ],
-        "Mutually Exclusive Parameter Pairs": [
-            [
-                "nesterov",
-                "use_ema"
-            ]
-        ],
-        "Mandatory Coexistence Parameters": [
-            [
-                "weight_decay",
-                "clipnorm",
-                "clipvalue",
-                "global_clipnorm"
-            ]
-        ],
-        "Conditional Mutual Exclusion Parameters": [
-            "nesterov",
-            "use_ema",
-            "(nesterov=True)&(use_ema=True)"
-        ]
-    },
     "tf.linalg.logdet": {
         "Parameter type": {
             "matrix": "Tensor (shape: [..., M, M])"
@@ -282,21 +187,75 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
-    "tf.nn.sufficient_statistics": {
+    "tf.strings.unicode_encode": {
         "Parameter type": {
-            "x": "Tensor",
-            "axes": "Array of ints",
-            "shift": "Optional[Tensor]",
-            "keepdims": "bool",
-            "name": "str"
+            "input": "Tensor (shape: (N+1 dimensional potentially ragged integer tensor with shape [D1...DN, num_chars])",
+            "output_encoding": "str (optional; default: 'UTF-8')",
+            "errors": "str (optional; default:'replace')",
+            "replacement_char": "int (optional; default: 0xFFFD (U+65533))",
+            "name": "str (optional)"
         },
         "Mandatory Parameters": [
-            "x",
-            "axes"
+            "input",
+            "output_encoding"
         ],
-        "Mutually Exclusive Parameter Pairs": [],
-        "Mandatory Coexistence Parameters": [],
-        "Conditional Mutual Exclusion Parameters": []
+        "Mutually Exclusive Parameter Pairs": [
+            [
+                "errors",
+                "replacement_char"
+            ]
+        ],
+        "Mandatory Coexistence Parameters": [
+            [
+                "input",
+                "output_encoding"
+            ]
+        ],
+        "Conditional Mutual Exclusion Parameters": [
+            "errors",
+            "output_encoding",
+            "(errors='replace')&(output_encoding='UTF-8')"
+        ]
+    },
+    "tf.keras.utils.plot_model": {
+        "Parameter type": {
+            "model": "Keras Model instance",
+            "to_file": "str",
+            "show_shapes": "bool",
+            "show_dtype": "bool",
+            "show_layer_names": "bool",
+            "rankdir": "str",
+            "expand_nested": "bool",
+            "dpi": "int",
+            "show_layer_activations": "bool",
+            "show_trainable": "bool"
+        },
+        "Mandatory Parameters": [
+            "model",
+            "to_file"
+        ],
+        "Mutually Exclusive Parameter Pairs": [
+            [
+                "show_shapes",
+                "show_dtype"
+            ],
+            [
+                "show_layer_names",
+                "show_dtype"
+            ]
+        ],
+        "Mandatory Coexistence Parameters": [
+            [
+                "MODEL",
+                "to_file",
+                "show_shapes"
+            ]
+        ],
+        "Conditional Mutual Exclusion Parameters": [
+            "rankdir",
+            "expand_nested",
+            "(rankdir=='TB')&(expand_nested==True)"
+        ]
     },
     "tf.queue.RandomShuffleQueue": {
         "Parameter type": {
@@ -322,13 +281,31 @@
     },
     "tf.math.xlog1py": {
         "Parameter type": {
-            "x": "Tensor (type: half,, float32,, float64, complex64, complex128)",
-            "y": "Tensor (type: half, float32, float64 complex64 complex128)",
+            "x": "Tensor (type: half, float32, complex64, complex128)",
+            "y": "Tensor (type: half, float32 float64 complex64 complex128)",
             "name": "str (optional)"
         },
         "Mandatory Parameters": [
             "x",
             "y"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "tf.experimental.numpy.arcsinh": {
+        "Parameter type": {
+            "input": "Tensor",
+            "weight": "Tensor",
+            "bias": "Optional[Tensor]",
+            "stride": "Union[int, Tuple[int]]",
+            "padding": "Union[int, Tuple[int], str]",
+            "dilation": "Union[int, Tuple[int]]",
+            "groups": "int"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "weight"
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
@@ -340,7 +317,7 @@
             "weight": "Tensor (shape: (out_channels in_channels // groups kW))",
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
-            "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
+            "padding": "Union[int  Tuple[int], str] (default: 0; options: 'valid','same')",
             "dilation": "Union[int  Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
@@ -363,7 +340,7 @@
             "bias": "Optional[Tensor] (shape: (out_channels))",
             "stride": "Union[int, Tuple[int]] (default: 1)",
             "padding": "Union[int, Tuple[int], str] (default: 0; options: 'valid','same')",
-            "dilation": "Union[int] (default: 1)",
+            "dilation": "Union[int  Tuple[int]] (default: 1)",
             "groups": "int (default: 1)"
         },
         "Mandatory Parameters": [
@@ -398,6 +375,44 @@
             "strides",
             "dilation",
             "(strides>1)&(dilation>1)"
+        ]
+    },
+    "tf.parallel_stack": {
+        "Parameter type": {
+            "values": "List[Tensor] (shape: (A, B, C))",
+            "name": "Optional[str]"
+        },
+        "Mandatory Parameters": [
+            "values"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "tf.ragged.constant": {
+        "Parameter type": {
+            "pylist": "Tensor (shape: variable)",
+            "dtype": "str (default: tf.float32)",
+            "ragged_rank": "int (default: max(0, K - 1))",
+            "inner_shape": "Tuple[int] (default: ())",
+            "name": "str (optional)",
+            "row_splits_dtype": "Union[tf.int32, tf.int64] (default: tf.int64)"
+        },
+        "Mandatory Parameters": [
+            "pylist",
+            "dtype"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [
+            [
+                "pylist",
+                "dtype"
+            ]
+        ],
+        "Conditional Mutual Exclusion Parameters": [
+            "ragged_rank",
+            "inner_shape",
+            "(ragged_rank>0)&(inner_shape!=())"
         ]
     }
 }
