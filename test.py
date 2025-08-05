@@ -30,9 +30,9 @@ Extract sliding local blocks from a batched input tensor.
     See :class:`torch.nn.Unfold` for details
 
 '''
-
-
-print(get_doc("torch.nn.MaxUnpool3d"))
+# torch.nn.functional.adaptive_avg_pool3d
+# torch.nn.functional.lp_pool1d
+print(get_doc("torch.nn.AdaptiveMaxPool2d"))
 # print(filter_apidocument(api_doc))
 # gpu_str = os.environ.get("FREE_GPUS", "")
 
