@@ -12,10 +12,28 @@ def log_analysis():
             break   
 # log_analysis()
 
+api_doc = '''
+Extract sliding local blocks from a batched input tensor.
+
+   .. warning::
+        Currently, only 4-D input tensors (batched image-like tensors) are
+        supported.
+
+   .. warning::
+
+        More than one element of the unfolded tensor may refer to a single
+        memory location. As a result, in-place operations (especially ones that
+        are vectorized) may result in incorrect behavior. If you need to write
+        to the tensor, please clone it first.
 
 
-print(get_doc("torch.nn.functional.rrelu"))
+    See :class:`torch.nn.Unfold` for details
 
+'''
+
+
+print(get_doc("torch.nn.MaxUnpool3d"))
+# print(filter_apidocument(api_doc))
 # gpu_str = os.environ.get("FREE_GPUS", "")
 
 # gpu_ids = [int(g) for g in gpu_str.strip().split()] if gpu_str else []
