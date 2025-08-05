@@ -28,10 +28,16 @@ add_log(log)：打印日志到控制台和文件
 
 def filter_apidocument(api_doc):
     # 定义正则表达式模式，匹配See :class:`~到` for more details.之间的内容
-    pattern = r'See :class:`~(.*?)` for more details\.'
-    match = re.search(pattern, api_doc)
-    if match:
-        return match.group(1)  # 返回捕获组中的内容
+    pattern_0 = r'See :class:`~(.*?)` for more details\.'
+    match_0 = re.search(pattern_0, api_doc)
+
+    pattern_1 = r'See :class:`(.*?)` for details\.'
+    match_1 = re.search(pattern_1, api_doc)
+
+    if match_0:
+        return match_0.group(1)  # 返回捕获组中的内容
+    elif match_1:
+        return match_1.group(1)
     return None  # 如果没有匹配到，返回None
 
 #根据函数名获取函数的文档字符串

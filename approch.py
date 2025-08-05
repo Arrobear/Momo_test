@@ -18,8 +18,8 @@ def generate_api_conditions(api_names):
     # model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True, device_map={"": gpu_ids[0]} )
     # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
-    
-    i = 0
+
+    i = 6
 
     while(True):
         # 获取函数名
