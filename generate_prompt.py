@@ -112,7 +112,7 @@ def generate_prompt_1(fun_string, api_def, api_doc):
         2. Prohibit autonomous extension, interpretation, or modification of user instructions.\n
         '''
         prompt = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt_1}
         ]
     else:

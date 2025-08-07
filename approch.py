@@ -2,7 +2,7 @@ from config import *
 from function import *
 from generate_prompt import *
 '''
-存储整个方法中的小步骤
+存储整个方法中的小步骤 
 
 generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成API条件，并存储至JSON文件
 

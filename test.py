@@ -38,8 +38,8 @@ Extract sliding local blocks from a batched input tensor.
 
 # gpu_ids = [int(g) for g in gpu_str.strip().split()] if gpu_str else []
 
-
-
+ 
+ 
 # bnb_config = BitsAndBytesConfig(
 #     load_in_4bit=True,
 #     bnb_4bit_quant_type="nf4",
