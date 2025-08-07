@@ -11,20 +11,22 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 
 
 def generate_api_conditions(api_names):
-    #加载模型
+    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+        api_defs = [line.strip() for line in file]
 
+    # 加载模型
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # model = AutoModelForCausalLM.from_pretrained(model_path,device_map={"": gpu_ids[0]} )
     # model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True, device_map={"": gpu_ids[0]} )
     # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
 
-    i = 6
+    i = 0
 
     while(True):
         # 获取函数名
-        
         fun_string = api_names[i]
+        api_def = api_defs[i]
         i += 1
         # 获取函数文档字符串
         api_doc = get_doc(fun_string)
@@ -32,7 +34,7 @@ def generate_api_conditions(api_names):
             add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
         # 生成prompt
-        prompt_1 = generate_prompt_1(fun_string, api_doc)
+        prompt_1 = generate_prompt_1(fun_string, api_def, api_doc)
         
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token  # 常见做法

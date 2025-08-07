@@ -47,6 +47,7 @@ def filter_apidocument(api_doc):
 
 #根据函数名获取函数的文档字符串
 def get_doc(function_name):
+
     if lib_name == "torch":
         if function_name.endswith("_"):
             function_name_ = function_name[:-1]
@@ -74,7 +75,7 @@ def get_doc(function_name):
             return api_doc
         else:
             func_name = filter_apidocument(api_doc)
-            return get_doc(func_name)
+            return get_doc(func_name)          
         
 
     elif lib_name == "tf":
