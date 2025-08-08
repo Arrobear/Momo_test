@@ -56,7 +56,7 @@ def monitor_gpu():
             if triggered:
                 print("占满后等待中，按 Ctrl+C 或 touch stop.txt 可退出")
                 while True:
-                    if os.path.exists("stop.txt"):
+                    if os.path.exists("stop_3.txt"):
                         print("检测到 stop.txt，程序退出。")
                         return
                     time.sleep(1)
