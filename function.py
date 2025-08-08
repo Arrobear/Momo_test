@@ -42,9 +42,9 @@ def filter_apidocument(api_doc):
     if match_0:
         return match_0.group(1)  # 返回捕获组中的内容
     elif match_1:
-        return match_2.group(1)
-    elif match_2:
         return match_1.group(1)
+    elif match_2:
+        return match_2.group(1)
     return None  # 如果没有匹配到，返回None
 
 #根据函数名获取函数的文档字符串
