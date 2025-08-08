@@ -11,7 +11,7 @@ def log_analysis():
         if i > 10:
             break   
 # log_analysis()
-print(tf.image.extract_patches.__doc__)
+# print(tf.image.extract_patches.__doc__)
 api_doc = '''
 Extract sliding local blocks from a batched input tensor.
 
@@ -32,7 +32,8 @@ Extract sliding local blocks from a batched input tensor.
 '''
 # torch.nn.functional.adaptive_avg_pool3d
 # torch.nn.functional.lp_pool1d
-
+print(get_doc("torch.nn.functional.max_unpool1d"))
+# print(torch.nn.functional.max_unpool1d.__doc__)
 # print(filter_apidocument(api_doc))
 # gpu_str = os.environ.get("FREE_GPUS", "")
 

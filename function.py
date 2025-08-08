@@ -31,18 +31,20 @@ def filter_apidocument(api_doc):
     pattern_0 = r'See :class:`~(.*?)` for more details\.'
     match_0 = re.search(pattern_0, api_doc)
 
-    pattern_1 = r'See :class:`(.*?)` for details'
+    pattern_1 = r'See :class:`~(.*?)` for details'
     match_1 = re.search(pattern_1, api_doc)
 
-    pattern_2 = r'See :class:`~(.*?)` for details'
+    pattern_2 = r'See :class:`(.*?)` for details'
     match_2 = re.search(pattern_2, api_doc)
+
+
 
     if match_0:
         return match_0.group(1)  # 返回捕获组中的内容
     elif match_1:
-        return match_1.group(1)
-    elif match_2:
         return match_2.group(1)
+    elif match_2:
+        return match_1.group(1)
     return None  # 如果没有匹配到，返回None
 
 #根据函数名获取函数的文档字符串
