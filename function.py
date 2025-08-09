@@ -52,12 +52,15 @@ def filter_apidocument(api_doc):
         return match_1.group(1)
     elif match_2:
         return match_2.group(1)
+<<<<<<< Updated upstream
     elif match_3:
         return match_3.group(1)
     elif match_4:
         return match_4.group(1)
     elif match_5:
         return match_5.group(1)
+=======
+>>>>>>> Stashed changes
     return None  # 如果没有匹配到，返回None
 
 #根据函数名获取函数的文档字符串

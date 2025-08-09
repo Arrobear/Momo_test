@@ -36,5 +36,25 @@ elif a == "1":
 else:
     print(eval(a).__doc__)
 
+<<<<<<< Updated upstream
+=======
+'''
+# torch.nn.functional.adaptive_avg_pool3d
+# torch.nn.functional.lp_pool1d
+# print(get_doc("torch.nn.functional.hardtanh"))
+print(filter_apidocument(torch.nn.functional.gelu.__doc__))
+print(torch.nn.functional.gelu.__doc__)
+
+# api_names = read_file(f"{lib_name}_APIdef.txt")
+# j = 0
+# for i in api_names:
+#     print(get_doc(i))
+#     j += 1
+#     print(j,'/', len(api_names))
+
+
+# print(filter_apidocument(api_doc))
+# gpu_str = os.environ.get("FREE_GPUS", "")
+>>>>>>> Stashed changes
 
 
