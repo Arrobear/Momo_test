@@ -29,10 +29,23 @@ def generate_api_conditions(api_names):
         api_def = api_defs[i]
         i += 1
         # 获取函数文档字符串
-        api_doc = get_doc(fun_string)
+        if lib_name == "torch":
+            if fun_string in torch_samename_list:
+                if api_names[i+3] == fun_string:
+                    function_name = fun_string + "_" + str(4)
+                elif api_names[i+2] == fun_string:
+                    function_name = fun_string + "_" + str(3)
+                elif api_names[i+1] == fun_string:
+                    function_name = fun_string + "_" + str(1)
+                else:
+                    function_name = fun_string+ "_" + str(2)
+        else:
+            function_name = fun_string
+        api_doc = get_doc(function_name)
         if api_doc == False:
             add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
+
         # 生成prompt
         prompt_1 = generate_prompt_1(fun_string, api_def, api_doc)
         

@@ -28,16 +28,23 @@ add_log(log)：打印日志到控制台和文件
 
 def filter_apidocument(api_doc):
     # 定义正则表达式模式，匹配See :class:`~到` for more details.之间的内容
-    pattern_0 = r'See :class:`~(.*?)` for more details\.'
+    pattern_0 = r':class:`~(.*?)` for more'
     match_0 = re.search(pattern_0, api_doc)
 
-    pattern_1 = r'See :class:`~(.*?)` for details'
+    pattern_1 = r'See :class:`~(.*?)`'
     match_1 = re.search(pattern_1, api_doc)
 
     pattern_2 = r'See :class:`(.*?)` for details'
     match_2 = re.search(pattern_2, api_doc)
 
+    pattern_3 = r'Alias of :func:`(.*?)`'
+    match_3 = re.search(pattern_3, api_doc)
 
+    pattern_4 = r'of :meth:`(.*?)`'
+    match_4 = re.search(pattern_4, api_doc)
+
+    pattern_5 = r'Alias for :func:`(.*?)`'
+    match_5 = re.search(pattern_5, api_doc)
 
     if match_0:
         return match_0.group(1)  # 返回捕获组中的内容
@@ -45,12 +52,23 @@ def filter_apidocument(api_doc):
         return match_1.group(1)
     elif match_2:
         return match_2.group(1)
+    elif match_3:
+        return match_3.group(1)
+    elif match_4:
+        return match_4.group(1)
+    elif match_5:
+        return match_5.group(1)
     return None  # 如果没有匹配到，返回None
 
 #根据函数名获取函数的文档字符串
 def get_doc(function_name):
-
+    
     if lib_name == "torch":
+        if function_name in torch_samename_data:
+            return torch_samename_data[function_name]
+        
+        if function_name in ["torch.scatter", "torch.scatter_add"]:
+            return eval(filter_apidocument(eval(function_name).__doc__)).__doc__
         if function_name.endswith("_"):
             function_name_ = function_name[:-1]
             try:
@@ -69,14 +87,34 @@ def get_doc(function_name):
         try:
             function = eval(function_name)
             api_doc = function.__doc__
+            if api_doc is None:
+                return False
     
         except (AttributeError, ImportError, NameError) as e:
             return False
-        
-        if "Args:" in api_doc:
+        hash_list = ["Args:" in api_doc , 
+                     "math::" in api_doc, 
+                     "Shape:" in api_doc , 
+                     "Arguments:" in api_doc , 
+                     "-> torch.dtype" in api_doc , 
+                     "from_numpy(ndarray)" in api_doc , 
+                     "torch.moveaxis" in api_doc , 
+                     "Examples:" in api_doc ,
+                     function_name == "torch.seed",
+                     function_name =="torch.initial_seed",
+                     function_name =="torch.get_rng_state",
+                     function_name =="torch.get_num_threads",
+                     function_name =="torch.get_num_interop_threads",
+                     function_name =="torch.compiled_with_cxx11_abi",
+                     function_name =="torch.are_deterministic_algorithms_enabled"
+                     ]
+
+        if True in hash_list:
             return api_doc
         else:
             func_name = filter_apidocument(api_doc)
+            if func_name is None:
+                return api_doc
             return get_doc(func_name)          
         
 
@@ -238,8 +276,8 @@ def get_api_conditions(fun_string, file_path):
 
 # 记录log
 def add_log(log):
-    with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
-    #with open(r'C:\Users\86184\Desktop\torch_log.txt', "a", encoding="utf-8") as f:
+    #with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
+    with open(r'C:\Users\86184\Desktop\torch_log.txt', "a", encoding="utf-8") as f:
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 

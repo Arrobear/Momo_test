@@ -8,6 +8,8 @@ import os
 import bitsandbytes
 import sys 
 from accelerate import infer_auto_device_map, init_empty_weights
+from torch_samename import *
+
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
@@ -22,13 +24,12 @@ gpu_str = os.environ.get("FREE_GPUS", "")
 
 gpu_ids = [int(g) for g in gpu_str.strip().split()] if gpu_str else []
 
+
 torch_samename_list = [
     "torch.dequantize",
     "torch.where",
     "torch.normal",
-    "torch.add",
     "torch.max",
-    "torch.mul",
     "torch.pow",
     "torch.argmax",
     "torch.all",
@@ -39,14 +40,7 @@ torch_samename_list = [
     "torch.nanmedian",
     "torch.nansum",
     "torch.prod",
-    "torch.std",
-    "torch.std_mean",
-    "torch.sum",
-    "torch.var",
-    "torch.var_mean",
-    "torch.repeat_interleave",
-    "torch.trapz"
-
+    "torch.sum"
 ]
 
 ds_torch_fail_list = [
