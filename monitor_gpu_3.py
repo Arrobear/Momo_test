@@ -49,7 +49,7 @@ def monitor_gpu():
                     tensors[gpu].append(tensor)
                 except RuntimeError:
                     time.sleep(15)
-                if os.path.exists("stop.txt"):
+                if os.path.exists("stop_3.txt"):
                     print("检测到 stop.txt，程序退出。")
                     return
 

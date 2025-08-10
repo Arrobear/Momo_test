@@ -2,7 +2,6 @@
 
 # 设置你要运行的 Python 程序路径
 PYTHON_SCRIPT="/nasdata/haoyahui/Momo_test/main.py"
-
 PYTHON_SCRIPT_M="/nasdata/haoyahui/Momo_test/monitor_gpu.py"
 
 # 显存使用阈值（单位：MiB）
@@ -11,8 +10,21 @@ THRESHOLD=5000
 # 是否已经执行过脚本
 EXECUTED=0
 
+# 输出间隔（秒）
+PRINT_INTERVAL=15
+LAST_PRINT_TIME=0
+
 while true; do
-    echo "====== $(date '+%Y-%m-%d %H:%M:%S') - 当前显存使用情况 ======"
+    CURRENT_TIME=$(date +%s)
+    
+    # 每 PRINT_INTERVAL 秒输出一次显存情况
+    if (( CURRENT_TIME - LAST_PRINT_TIME >= PRINT_INTERVAL )); then
+        echo "====== $(date '+%Y-%m-%d %H:%M:%S') - 当前显存使用情况 ======"
+        LAST_PRINT_TIME=$CURRENT_TIME
+        PRINT_INFO=1
+    else
+        PRINT_INFO=0
+    fi
 
     # 获取每张 GPU 的显存使用情况（单位：MiB）
     USAGES=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
@@ -20,7 +32,9 @@ while true; do
     INDEX=0
     AVAILABLE_GPUS=""
     while IFS= read -r usage; do
-        echo "GPU $INDEX: ${usage} MiB"
+        if [ "$PRINT_INFO" -eq 1 ]; then
+            echo "GPU $INDEX: ${usage} MiB"
+        fi
         if [ "$usage" -lt "$THRESHOLD" ]; then
             AVAILABLE_GPUS="$AVAILABLE_GPUS $INDEX"
         fi
@@ -53,5 +67,6 @@ while true; do
         exit 0
     fi
 
-    sleep 1
+    # 检测间隔 0.1 秒
+    sleep 0.1
 done
