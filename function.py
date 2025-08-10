@@ -281,6 +281,13 @@ def add_log(log):
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 
+# 记录log
+def local_add_log(log):
+    # with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
+    with open(r'C:\Users\86184\Desktop\tf_log.txt', "a", encoding="utf-8") as f:
+        print(log)  # 打印到控制台
+        print(log, file=f)  # 写入文件
+
 # 将过滤好的参数组合写入JSON文件
 def append_filtered_combinations_to_json(path, fun_string, new_data):
     # 如果文件存在，加载内容；否则创建空字典

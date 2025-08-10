@@ -13,48 +13,29 @@ from generate_prompt import *
 #         if i > 10:
 #             break   
 # log_analysis()
-
+with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    api_defs = [line.strip() for line in file]
 
 a = "0"
 b = "torch.stack"
 k = []
 if a == "0":
     api_names = read_file(f"{lib_name}_APIdef.txt")
-    j = 0
-    for i in api_names:
-        doc = get_doc(i)
-        add_log(doc)
-        j += 1
-        
-        if doc is not False and len(doc) < 250:
-            k.append(j)
-        
-        add_log(str(j) + '/' + str(len(api_names)))
-    add_log(str(k))
+
+    for i in range(len(api_names)):
+
+        doc = get_doc(api_names[i])
+        local_add_log(api_defs[i])
+        local_add_log(doc)
+        i+=1
+        local_add_log(str(i) + '/' + str(len(api_names)))
+        if doc is not None and doc is not False and len(doc)<250:
+            k.append(i)
+    local_add_log(k)
 elif a == "1":
     print(get_doc(b))
 else:
     print(eval(a).__doc__)
 
-<<<<<<< Updated upstream
-=======
-'''
-# torch.nn.functional.adaptive_avg_pool3d
-# torch.nn.functional.lp_pool1d
-# print(get_doc("torch.nn.functional.hardtanh"))
-print(filter_apidocument(torch.nn.functional.gelu.__doc__))
-print(torch.nn.functional.gelu.__doc__)
 
-# api_names = read_file(f"{lib_name}_APIdef.txt")
-# j = 0
-# for i in api_names:
-#     print(get_doc(i))
-#     j += 1
-#     print(j,'/', len(api_names))
-
-
-# print(filter_apidocument(api_doc))
-# gpu_str = os.environ.get("FREE_GPUS", "")
->>>>>>> Stashed changes
-
-
+[11,32,39,]

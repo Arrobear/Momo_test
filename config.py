@@ -18,7 +18,7 @@ model_path = "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
-lib_name = "torch"  # 库名称
+lib_name = "tf"  # 库名称
 
 gpu_str = os.environ.get("FREE_GPUS", "")
 
@@ -43,37 +43,4 @@ torch_samename_list = [
     "torch.sum"
 ]
 
-ds_torch_fail_list = [
-    "torch.nn.functional.embedding_bag",
-    "torch.nn.functional.grid_sample",
-    "torch.sparse_coo_tensor",
-    "torch.load",
-    "torch.unique",
-    "torch.stft",
-    "torch.einsum",
-    "torch.triu",
-    "torch.svd",
-    "torch.lobpcg",
-    "torch.use_deterministic_algorithms",
-    "torch.nn.Conv1d",
-    "torch.nn.Conv2d",
-    "torch.nn.Conv3d",
-    "torch.nn.ConvTranspose2d",
-    "torch.nn.ConvTranspose3d",
-    "torch.nn.Unfold",
-    "torch.nn.SyncBatchNorm",
-    "torch.nn.RNN",
-    "torch.nn.LSTM",
-    "torch.nn.GRU",
-    "torch.nn.Embedding",
-    "torch.nn.EmbeddingBag",
-    "torch.nn.CrossEntropyLoss",
-    "torch.nn.NLLLoss",
-    "torch.nn.CTCLoss",
-    "torch.nn.BCEWithLogitsLoss",
-    "torch.nn.TripletMarginWithDistanceLoss",
-    "torch.nn.Upsample",
-    "torch.nn.parallel.DistributedDataParallel",
-    "torch.nn.modules.lazy.LazyModuleMixin"
-]
 
