@@ -39,6 +39,8 @@ def generate_api_conditions(api_names):
                     function_name = fun_string + "_" + str(1)
                 else:
                     function_name = fun_string+ "_" + str(2)
+            else:
+                function_name = fun_string
         else:
             function_name = fun_string
         api_doc = get_doc(function_name)
