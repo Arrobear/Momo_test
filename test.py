@@ -3,42 +3,104 @@ from function import *
 from main import *
 from generate_prompt import *
 
-# print(torch_samename_data["torch.where_1"])
+def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
+    """
+    将字符串内容添加到文本文件中
+    
+    参数:
+        file_path (str): 目标文件的路径
+        content (str): 要添加的内容
+        mode (str): 文件打开模式，默认为'a'(追加)
+                   'a' - 追加(文件不存在则创建)
+                   'w' - 写入(会覆盖原有内容)
+        encoding (str): 文件编码，默认为'utf-8'
+    
+    返回:
+        bool: 操作是否成功
+    """
+    try:
+        with open(file_path, mode, encoding=encoding) as file:
+            file.write(content)
+            if not content.endswith('\n'):  # 如果内容不以换行符结尾，自动添加
+                file.write('\n')
+        return True
+    except Exception as e:
+        print(f"写入文件时出错: {e}")
+        return False
 
-# def log_analysis():
-#     with open('conditions/ds_tf_log.txt', 'r', encoding='utf-8') as file:
-#         log_list = [line.rstrip('\n') for line in file.readlines()]
-#     for i in range(len(log_list)):
-#         print(log_list[i])
-#         if i > 10:
-#             break   
-# log_analysis()
 
 
-# with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
-#     api_defs = [line.strip() for line in file]
+with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    api_defs = [line.strip() for line in file]
 
-# a = "0"
-# b = "torch.stack"
-# k = []
-# if a == "0":
-#     api_names = read_file(f"{lib_name}_APIdef.txt")
+api_names = read_file(f"{lib_name}_APIdef.txt")
 
-#     for i in range(len(api_names)):
+for i in range(len(api_names)):
+    doc = get_doc(api_names[i])
+    # local_add_log(api_defs[i])
+    # local_add_log(doc)
+    if doc is not False:
+        append_to_txt_file(f'C:/Users/86184/Desktop/{lib_name}_APIdef.txt',  api_defs[i])
+    i+=1
 
-#         doc = get_doc(api_names[i])
-#         local_add_log(api_defs[i])
-#         local_add_log(doc)
-#         i+=1
-#         local_add_log(str(i) + '/' + str(len(api_names)))
-#         if doc is not None and doc is not False and len(doc)<250:
-#             k.append(i)
-#     local_add_log(k)
-# elif a == "1":
-#     print(get_doc(b))
-# else:
-#     print(eval(a).__doc__)
+    #local_add_log(str(i) + '/' + str(len(api_names)))
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def log_analysis():
+    with open('conditions/ds_tf_log.txt', 'r', encoding='utf-8') as file:
+        log_list = [line.rstrip('\n') for line in file.readlines()]
+    for i in range(len(log_list)):
+        print(log_list[i])
+        if i > 10:
+            break   
+      
+
+def test_api_doc():
+    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+        api_defs = [line.strip() for line in file]
+
+    a = "tf.queue.QueueBase"
+    b = "torch.stack"
+    waiting_check = []
+    abandoned_apis = []
+    numpy_redefined_apis = []
+    if a == "0":
+        api_names = read_file(f"{lib_name}_APIdef.txt")
+
+        for i in range(len(api_names)):
+
+            doc = get_doc(api_names[i])
+            local_add_log(api_defs[i])
+            local_add_log(doc)
+            i+=1
+            local_add_log(str(i) + '/' + str(len(api_names)))
+            if doc is not None and doc is not False and len(doc)<250:
+                if "DEPRECATED" in doc:
+                    abandoned_apis.append(i)
+                elif "See the NumPy" in doc:
+                    numpy_redefined_apis.append(i)
+                else:
+                    waiting_check.append(i)
+        local_add_log(f"abandoned_apis: {abandoned_apis}")
+        local_add_log(f"numpy_redefined_apis: {numpy_redefined_apis}")
+        local_add_log(f"waiting_check: {waiting_check}")
+    elif a == "1":
+        print(get_doc(b))
+    else:
+        print(eval(a).__doc__)
 
 
 def find_all_empty_dicts_in_json(file_path, target_key=None):
@@ -84,6 +146,6 @@ def find_all_empty_dicts_in_json(file_path, target_key=None):
     
     return empty_dicts
     
-message = find_all_empty_dicts_in_json('C:/Users/86184/Desktop/torch_conditions.json')
-for item in message:
-    print(f"空字典路径: {item['path']}, 值: {item['value']}")
+# message = find_all_empty_dicts_in_json('C:/Users/86184/Desktop/torch_conditions.json')
+# for item in message:
+#     print(f"空字典路径: {item['path']}, 值: {item['value']}")
