@@ -27,37 +27,43 @@ add_log(log)：打印日志到控制台和文件
 
 def filter_apidocument(api_doc):
     # 定义正则表达式模式，匹配See :class:`~到` for more details.之间的内容
-    pattern_0 = r':class:`~(.*?)` for more'
-    match_0 = re.search(pattern_0, api_doc)
+    if lib_name == "torch":
+        pattern_0 = r':class:`~(.*?)` for more'
+        match_0 = re.search(pattern_0, api_doc)
 
-    pattern_1 = r'See :class:`~(.*?)`'
-    match_1 = re.search(pattern_1, api_doc)
+        pattern_1 = r'See :class:`~(.*?)`'
+        match_1 = re.search(pattern_1, api_doc)
 
-    pattern_2 = r'See :class:`(.*?)` for details'
-    match_2 = re.search(pattern_2, api_doc)
+        pattern_2 = r'See :class:`(.*?)` for details'
+        match_2 = re.search(pattern_2, api_doc)
 
-    pattern_3 = r'Alias of :func:`(.*?)`'
-    match_3 = re.search(pattern_3, api_doc)
+        pattern_3 = r'Alias of :func:`(.*?)`'
+        match_3 = re.search(pattern_3, api_doc)
 
-    pattern_4 = r'of :meth:`(.*?)`'
-    match_4 = re.search(pattern_4, api_doc)
+        pattern_4 = r'of :meth:`(.*?)`'
+        match_4 = re.search(pattern_4, api_doc)
 
-    pattern_5 = r'Alias for :func:`(.*?)`'
-    match_5 = re.search(pattern_5, api_doc)
+        pattern_5 = r'Alias for :func:`(.*?)`'
+        match_5 = re.search(pattern_5, api_doc)
 
-    if match_0:
-        return match_0.group(1)  # 返回捕获组中的内容
-    elif match_1:
-        return match_1.group(1)
-    elif match_2:
-        return match_2.group(1)
-    elif match_3:
-        return match_3.group(1)
-    elif match_4:
-        return match_4.group(1)
-    elif match_5:
-        return match_5.group(1)
-    return None  # 如果没有匹配到，返回None
+        if match_0:
+            return match_0.group(1)  # 返回捕获组中的内容
+        elif match_1:
+            return match_1.group(1)
+        elif match_2:
+            return match_2.group(1)
+        elif match_3:
+            return match_3.group(1)
+        elif match_4:
+            return match_4.group(1)
+        elif match_5:
+            return match_5.group(1)
+        return None  # 如果没有匹配到，返回None
+    elif lib_name == "tf":
+        pattern_0 = r':class:`~(.*?)` for more'
+        match_0 = re.search(pattern_0, api_doc)
+
+
 
 #根据函数名获取函数的文档字符串
 def get_doc(function_name):
@@ -116,13 +122,17 @@ def get_doc(function_name):
                 return api_doc
             return get_doc(func_name)          
         
-
     elif lib_name == "tf":
         try:
             function = eval(function_name)
             api_doc = function.__doc__
         except (AttributeError, ImportError, NameError) as e:
             return False
+        w = [32, 42, 75, 235, 288, 294, 390, 718, 770, 890, 920, 996, 1270, 1276]
+
+        if api_doc is None:
+            return False
+        
         return api_doc
 
 
@@ -283,7 +293,7 @@ def add_log(log):
 # 记录log
 def local_add_log(log):
     # with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
-    with open(r'C:\Users\86184\Desktop\tf_log.txt', "a", encoding="utf-8") as f:
+    with open(f'C:/Users/86184/Desktop/local_{lib_name}_log.txt', "a", encoding="utf-8") as f:
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 
