@@ -65,7 +65,7 @@ def base_condition_filter(api_names):
     with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
-    i = 558
+    i = 0
 
     while(True):
         # 获取函数名
