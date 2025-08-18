@@ -28,34 +28,20 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
         print(f"写入文件时出错: {e}")
         return False
 
+# 测试代码区
+# with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+#     api_defs = [line.strip() for line in file]
+# api_names = read_file(f"{lib_name}_APIdef.txt")
+# for i in range(len(api_names)):
+#     args = get_all_parameters(api_names[i], api_defs[i])
+#     append_to_txt_file(f'C:/Users/86184/Desktop/{lib_name}_args.txt', f"{api_names[i]}: {args}", mode='a', encoding='utf-8')
 
 
-with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
-    api_defs = [line.strip() for line in file]
-
-api_names = read_file(f"{lib_name}_APIdef.txt")
-
-for i in range(len(api_names)):
-    doc = get_doc(api_names[i])
-    # local_add_log(api_defs[i])
-    # local_add_log(doc)
-    if doc is not False:
-        append_to_txt_file(f'C:/Users/86184/Desktop/{lib_name}_APIdef.txt',  api_defs[i])
-    i+=1
-
-    #local_add_log(str(i) + '/' + str(len(api_names)))
+# json_path = Path(__file__).parent / "conditions" / f"{lib_name}_conditions.json"
+# print(get_api_conditions("torch.initial_seed", str(json_path)))
 
 
-
-
-
-
-
-
-
-
-
-
+ #测试用函数
 
 
 

@@ -29,20 +29,8 @@ def generate_api_conditions(api_names):
         api_def = api_defs[i]
         i += 1
         # 获取函数文档字符串
-        if lib_name == "torch":
-            if fun_string in torch_samename_list:
-                if api_names[i+3] == fun_string:
-                    function_name = fun_string + "_" + str(4)
-                elif api_names[i+2] == fun_string:
-                    function_name = fun_string + "_" + str(3)
-                elif api_names[i+1] == fun_string:
-                    function_name = fun_string + "_" + str(1)
-                else:
-                    function_name = fun_string+ "_" + str(2)
-            else:
-                function_name = fun_string
-        else:
-            function_name = fun_string
+        function_name = filter_samenames(i, fun_string, api_names)
+
         api_doc = get_doc(function_name)
         if api_doc == False:
             add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
@@ -66,41 +54,46 @@ def generate_api_conditions(api_names):
         api_conditions = handle_output(outputs_text, model_path)
 
         #存储至json
-        append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', fun_string, api_conditions)
-        add_log(f"已完成{fun_string}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
+        append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', function_name, api_conditions)
+        add_log(f"已完成{function_name}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
         # if i >= 50:
             break
 
 def base_condition_filter(api_names):
+    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+        api_defs = [line.strip() for line in file]
+
+    i = 558
+
     while(True):
         # 获取函数名
-        i = 0
+
         fun_string = api_names[i]
-        i += 1
+        api_def = api_defs[i]
+        function_name = filter_samenames(i, fun_string, api_names)
 
-        # 获取函数文档字符串
-        api_doc = get_doc(fun_string)
-        
-        # 选择对应的参数列表提取方法提取参数参数列表
-        approach = f'extract_parameters_{lib_name}'
-        apprameters_list = eval(approach)(api_doc)
-
+        # 得到所有合法参数→生成所有组合→过滤合法组合→存储至json
+        args = get_all_parameters(function_name)
         # 生成全参数组合
-        all_combinations = generate_all_combinations(apprameters_list)
+        all_combinations = generate_all_combinations(args)
+
+        i += 1
         # for j in all_combinations:
         #     print(j)   
         # 读取json得到过滤条件
-        conditions = get_api_conditions(fun_string, f'{lib_name}_conditions.json')
+        json_path = Path(__file__).parent / "conditions" / f"{lib_name}_conditions.json"
+
+        conditions = get_api_conditions(function_name, str(json_path))
 
         # 过滤参数组合
         filtered_combinations = filter_combinations(all_combinations, conditions)
 
         # 将过滤后的组合存储至json
 
-        append_filtered_combinations_to_json(f'{lib_name}_combinations.json', fun_string, filtered_combinations)
-        print(f"已完成{fun_string}的条件过滤")
+        append_filtered_combinations_to_json(f'{lib_name}_combinations.json', function_name, filtered_combinations)
+        local_add_log(f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
             break

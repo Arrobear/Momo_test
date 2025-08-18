@@ -9,7 +9,7 @@ import bitsandbytes
 import sys 
 from accelerate import infer_auto_device_map, init_empty_weights
 from torch_samename import *
-
+from pathlib import Path
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"

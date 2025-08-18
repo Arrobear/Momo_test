@@ -128,7 +128,6 @@ def get_doc(function_name):
             api_doc = function.__doc__
         except (AttributeError, ImportError, NameError) as e:
             return False
-        w = [32, 42, 75, 235, 288, 294, 390, 718, 770, 890, 920, 996, 1270, 1276]
 
         if api_doc is None:
             return False
@@ -138,45 +137,96 @@ def get_doc(function_name):
 
 #根据函数文档获取参数列表
 #针对torch函数文档进行处理
-def extract_parameters_torch(api_doc):
-
+def extract_parameters_torch(api_doc, api_def):
+    
+    if len(api_doc) > len(api_def):
+        new_api_doc = api_doc[:len(api_def)+100]
+    else:
+        new_api_doc = api_doc
     # 使用正则表达式匹配第一个括号内的内容（参数部分）
-    match = re.search(r'\((.*?)\)', api_doc)
-    param_str = match.group(1)
-
-    # 处理参数字符串
-    parameters = [p.strip().split('=')[0] for p in param_str.split(',')]
-    for i in parameters:
-        if i == '*':
-            parameters.remove(i)
-    return parameters
+    match = re.search(r'\((.*?)\)', new_api_doc)
+    
+    if not match:
+        match_1 = re.search(r'\((.*?)\)', api_def)
+        param_str = match_1.group(1)
+        # 处理参数字符串
+        parameters = [p.strip().split('=')[0] for p in param_str.split(',')]
+        for i in parameters:
+            if i == '*':
+                parameters.remove(i)
+        return parameters
+    else:
+        param_str = match.group(1)
+        # 处理参数字符串
+        parameters = [p.strip().split('=')[0] for p in param_str.split(',')]
+        for i in parameters:
+            if i == '*':
+                parameters.remove(i)
+        return parameters
 
 #针对tf函数文档进行处理
-def extract_parameters_tf(api_doc):
+def extract_parameters_tf(api_doc, api_def):
     # 使用正则表达式匹配Args部分的所有参数
     #tf↓
     #pattern = r'Args:\n(.*?)(?=\n\n|\n\w+:|$)'
     #torch↓
-    pattern = r'Args:\n(.*?)(?=\n\w+:|Returns:|$)'
-    args_section = re.search(pattern, api_doc, re.DOTALL)
+    if "Args:" in api_doc:
+        pattern = r'Args:\n(.*?)(?=\n\w+:|Returns:|$)'
+        args_section = re.search(pattern, api_doc, re.DOTALL)
+        
+        if not args_section:
+            return []
+        
+        # 提取每个参数行
+        param_lines = args_section.group(1).split('\n')
+        #for i in param_lines:
+            #print(i)
+
+        parameters = []
+        
+        for line in param_lines:
+            # 匹配参数名（第一个冒号前的单词）
+            param_match = re.match(r'^\s*(\w+)\s*:', line.strip())
+            if param_match:
+                parameters.append(param_match.group(1))
+        
+        return parameters
+    else:
+        # 如果没有找到Args部分，使用api_def获取参数列表
+        param_str = api_def.split('(')[1].split(')')[0]
+        parameters = [p.strip().split('=')[0] for p in param_str.split(',')]
+        for i in parameters:
+            if i == '*':
+                parameters.remove(i)
+        return parameters
+
+#获取函数所有合法参数
+def get_all_parameters(api_name: str):
+    json_filename = f"{lib_name}_conditions.json"
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(current_dir, "conditions", json_filename)
     
-    if not args_section:
+    with open(json_path, 'r', encoding='utf-8') as file:
+        data = json.load(file)
+    
+    if api_name not in data:
+        raise KeyError(f"API '{api_name}' not found in JSON file")
+    
+    if "Parameter type" not in data[api_name]:
         return []
     
-    # 提取每个参数行
-    param_lines = args_section.group(1).split('\n')
-    #for i in param_lines:
-        #print(i)
+    return list(data[api_name]["Parameter type"].keys())
+    # api_doc = get_doc(fun_string)
+    # 先根据api_doc获取参数列表
+    # 如果不能通过api_doc获取参数列表，则使用api_def获取参数列表
 
-    parameters = []
-    
-    for line in param_lines:
-        # 匹配参数名（第一个冒号前的单词）
-        param_match = re.match(r'^\s*(\w+)\s*:', line.strip())
-        if param_match:
-            parameters.append(param_match.group(1))
-    
-    return parameters
+    # if lib_name == "torch":
+    #     return extract_parameters_torch(api_doc, api_def)
+    # elif lib_name == "tf":
+    #     return extract_parameters_tf(api_doc, api_def)
+    # 选择对应的参数列表提取方法提取参数参数列表
+
 
 #获取所有参数的组合
 def generate_all_combinations(args):
@@ -293,7 +343,7 @@ def add_log(log):
 # 记录log
 def local_add_log(log):
     # with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
-    with open(f'C:/Users/86184/Desktop/local_{lib_name}_log.txt', "a", encoding="utf-8") as f:
+    with open(f'C:/Users/86184/Desktop/local_{lib_name}_filter_log.txt', "a", encoding="utf-8") as f:
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 
@@ -334,6 +384,10 @@ def handle_output(text: str, model_path: str):
 
         # 获取 </think> 后的内容
         after_think = text.split(end_tag, 1)[1].strip()
+        for i in range(len(after_think)-1, -1, -1):
+            if after_think[i] == '}':
+                # 找到最后一个'}'，返回从开头到该位置的子串
+                return after_think[:i+1]
 
         try:
             return after_think
@@ -394,3 +448,21 @@ def generate_output(inputs, model, tokenizer):
             pad_token_id=tokenizer.pad_token_id
         )
     return outputs
+
+# 预防同名函数
+def filter_samenames(i ,fun_string, api_names):
+    if lib_name == "torch":
+        if fun_string in torch_samename_list:
+            if api_names[i+3] == fun_string:
+                function_name = fun_string + "_" + str(4)
+            elif api_names[i+2] == fun_string:
+                function_name = fun_string + "_" + str(3)
+            elif api_names[i+1] == fun_string:
+                function_name = fun_string + "_" + str(1)
+            else:
+                function_name = fun_string+ "_" + str(2)
+        else:
+            function_name = fun_string
+    else:
+        function_name = fun_string
+    return function_name
