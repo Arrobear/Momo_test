@@ -92,7 +92,7 @@ def base_condition_filter(api_names):
 
         # 将过滤后的组合存储至json
 
-        append_filtered_combinations_to_json(f'/tmp/Momo_test/{lib_name}_combinations.json', function_name, filtered_combinations)
+        append_filtered_combinations_to_json(f'/tmp/Momo_test/{lib_name}_combinations_6.json', function_name, filtered_combinations)
         add_log(f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
