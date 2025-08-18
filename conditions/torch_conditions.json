@@ -2503,6 +2503,17 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.dequantize_1": {
+        "Parameter type": {
+            "tensor": "Tensor"
+        },
+        "Mandatory Parameters": [
+            "tensor"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.dequantize_2": {
         "Parameter type": {
             "tensors": "sequence of Tensors"
@@ -2978,6 +2989,22 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.where_1": {
+        "Parameter type": {
+            "condition": "BoolTensor",
+            "input": "Tensor or Scalar",
+            "other": "Tensor or Scalar",
+            "out": "Optional[Tensor]"
+        },
+        "Mandatory Parameters": [
+            "condition",
+            "input",
+            "other"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.where_2": {
         "Parameter type": {
             "condition": "Tensor (boolean)"
@@ -3070,11 +3097,25 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.normal_4": {
+        "Parameter type": {
+            "mean": "Tensor",
+            "std": "Tensor",
+            "generator": "Optional[torch.Generator]",
+            "out": "Optional[Tensor]"
+        },
+        "Mandatory Parameters": [
+            "mean",
+            "std"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.normal_3": {
         "Parameter type": {
-            "mean": "float (optional)",
+            "mean": "float (optional, default: 0.0)",
             "std": "Tensor",
-            "generator": "Optional[Generator]",
             "out": "Optional[Tensor]"
         },
         "Mandatory Parameters": [
@@ -3528,12 +3569,23 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.max_3": {
+        "Parameter type": {
+            "input": "Tensor"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.max_1": {
         "Parameter type": {
             "input": "Tensor",
-            "dim": "Optional[Union[int, Tuple[int]]]",
-            "keepdim": "Optional[bool]",
-            "out": "Optional[Tuple[Tensor, LongTensor]]"
+            "dim": "int or tuple of ints, optional",
+            "keepdim": "bool, optional",
+            "out": "tuple, optional"
         },
         "Mandatory Parameters": [
             "input"
@@ -4223,6 +4275,20 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.pow_1": {
+        "Parameter type": {
+            "input": "Tensor",
+            "exponent": "float or Tensor",
+            "out": "Optional[Tensor]"
+        },
+        "Mandatory Parameters": [
+            "input",
+            "exponent"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.pow_2": {
         "Parameter type": {
             "self": "float",
@@ -4502,6 +4568,17 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.argmax_1": {
+        "Parameter type": {
+            "input": "Tensor"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.argmax_2": {
         "Parameter type": {
             "input": "Tensor",
@@ -4559,6 +4636,17 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.all_1": {
+        "Parameter type": {
+            "input": "Tensor"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.all_2": {
         "Parameter type": {
             "input": "Tensor",
@@ -4569,6 +4657,18 @@
         "Mandatory Parameters": [
             "input",
             "dim"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.any_1": {
+        "Parameter type": {
+            "input": "Tensor",
+            "out": "Optional[Tensor]"
+        },
+        "Mandatory Parameters": [
+            "input"
         ],
         "Mutually Exclusive Parameter Pairs": [],
         "Mandatory Coexistence Parameters": [],
@@ -4591,7 +4691,10 @@
     },
     "torch.min_1": {
         "Parameter type": {
-            "input": "Tensor"
+            "input": "Tensor",
+            "dim": "int",
+            "keepdim": "bool (default: False)",
+            "out": "Optional[Tensor]"
         },
         "Mandatory Parameters": [
             "input"
@@ -4643,6 +4746,18 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.mean_1": {
+        "Parameter type": {
+            "input": "Tensor",
+            "dtype": "Optional[torch.dtype]"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.mean_2": {
         "Parameter type": {
             "input": "Tensor",
@@ -4659,12 +4774,34 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.median_1": {
+        "Parameter type": {
+            "input": "Tensor"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.median_2": {
         "Parameter type": {
             "input": "Tensor",
             "dim": "int",
             "keepdim": "bool",
             "out": "Optional[Tuple[Tensor, Tensor]]"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.nanmedian_1": {
+        "Parameter type": {
+            "input": "Tensor"
         },
         "Mandatory Parameters": [
             "input"
@@ -4717,12 +4854,36 @@
         "Mandatory Coexistence Parameters": [],
         "Conditional Mutual Exclusion Parameters": []
     },
+    "torch.nansum_1": {
+        "Parameter type": {
+            "input": "Tensor",
+            "dtype": "Optional[torch.dtype]"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
     "torch.nansum_2": {
         "Parameter type": {
             "input": "Tensor",
             "dim": "int or tuple of ints, optional",
             "keepdim": "bool",
             "dtype": "torch.dtype, optional"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.prod_1": {
+        "Parameter type": {
+            "input": "Tensor",
+            "dtype": "Optional[torch.dtype]"
         },
         "Mandatory Parameters": [
             "input"
@@ -4802,6 +4963,18 @@
             "correction": "int",
             "keepdim": "bool",
             "out": "Optional[Tensor]"
+        },
+        "Mandatory Parameters": [
+            "input"
+        ],
+        "Mutually Exclusive Parameter Pairs": [],
+        "Mandatory Coexistence Parameters": [],
+        "Conditional Mutual Exclusion Parameters": []
+    },
+    "torch.sum_1": {
+        "Parameter type": {
+            "input": "Tensor",
+            "dtype": "Optional[torch.dtype]"
         },
         "Mandatory Parameters": [
             "input"

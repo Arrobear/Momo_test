@@ -11,10 +11,10 @@ if __name__ == "__main__":
   api_names = read_file(f"{lib_name}_APIdef.txt")
 
   # 生成过滤条件
-  generate_api_conditions(api_names)
+  #generate_api_conditions(api_names)
    
   # 生成所有可能的组合
-  #base_condition_filter(api_names)
+  base_condition_filter(api_names)
 
 
 
