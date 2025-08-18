@@ -335,8 +335,9 @@ def get_api_conditions(fun_string, file_path):
 
 # 记录log
 def add_log(log):
-    with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
+    #with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
     # with open(r'C:\Users\86184\Desktop\torch_log.txt', "a", encoding="utf-8") as f:
+    with open(f'/tmp/Momo_test/{lib_name}_filter_log.txt', "a", encoding="utf-8") as f:
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 

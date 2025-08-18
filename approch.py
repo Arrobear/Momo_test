@@ -27,10 +27,10 @@ def generate_api_conditions(api_names):
         # 获取函数名
         fun_string = api_names[i]
         api_def = api_defs[i]
-        i += 1
+        
         # 获取函数文档字符串
         function_name = filter_samenames(i, fun_string, api_names)
-
+        i += 1
         api_doc = get_doc(function_name)
         if api_doc == False:
             add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
@@ -92,8 +92,8 @@ def base_condition_filter(api_names):
 
         # 将过滤后的组合存储至json
 
-        append_filtered_combinations_to_json(f'{lib_name}_combinations.json', function_name, filtered_combinations)
-        local_add_log(f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
+        append_filtered_combinations_to_json(f'/tmp/Momo_test/{lib_name}_combinations.json', function_name, filtered_combinations)
+        add_log(f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
             break
