@@ -337,7 +337,13 @@ def get_api_conditions(fun_string, file_path):
 def add_log(log):
     #with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
     # with open(r'C:\Users\86184\Desktop\torch_log.txt', "a", encoding="utf-8") as f:
-    with open(f'/tmp/Momo_test/{lib_name}_filter_log.txt', "a", encoding="utf-8") as f:
+    file_path = f'/tmp/Momo_test/{lib_name}_filter_log.txt'
+    
+    # 确保目录和文件都存在
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    # 写入日志（如果文件不存在会自动创建）
+    with open(file_path, "a", encoding="utf-8") as f:
         print(log)  # 打印到控制台
         print(log, file=f)  # 写入文件
 
@@ -350,6 +356,7 @@ def local_add_log(log):
 
 # 将过滤好的参数组合写入JSON文件
 def append_filtered_combinations_to_json(path, fun_string, new_data):
+    
     # 如果文件存在，加载内容；否则创建空字典
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
@@ -366,6 +373,34 @@ def append_filtered_combinations_to_json(path, fun_string, new_data):
     # 写入到文件
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+# 读取JSON文件中的过滤好的参数组合
+def is_file_too_large(file_path, max_size_mb=10):
+    """
+    检查文件是否过大
+    
+    参数:
+    file_path (str): 文件路径
+    max_size_mb (float): 最大允许的文件大小（MB），默认10MB
+    
+    返回:
+    bool: 如果文件超过指定大小返回True，否则返回False
+    """
+    try:
+        if not os.path.exists(file_path):
+            return False
+            
+        file_size = os.path.getsize(file_path)  # 字节数
+        file_size_mb = file_size / (1024 * 1024)  # 转换为MB
+        
+        return file_size_mb > max_size_mb
+        
+    except Exception as e:
+        print(f"检查文件大小时发生错误：{e}")
+        return False
+
+
 
 # 手动处理output
 def handle_output(text: str, model_path: str):

@@ -121,3 +121,39 @@ def generate_prompt_1(fun_string, api_def, api_doc):
 
     return prompt
 
+
+def generate_prompt_2(fun_string, args, api_def, api_doc):
+    ori_prompt = f'''
+    \n1. Role:
+        You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+
+    \n---
+    \n2. Background and Context:
+
+    \n(1) API Documentation.
+
+    We provide below the official documentation for the API to be analyzed: 
+    [{fun_string}]
+    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
+    The explicit definition of the API is as follows:
+    {api_def}
+
+    The specific API documentation content is as below:
+    [{api_doc}]
+
+
+
+    \n---
+    \n3. Your Tasks:
+    Based on the explicit definition of the API and the API documentation, especially the "Args" part in the API documentation: 
+
+
+    \n---
+    \n4.Output Format:
+ 
+
+    \n---
+    \n5.Examples:
+    Output Examples: 
+
+    '''
