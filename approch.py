@@ -93,7 +93,7 @@ def base_condition_filter(api_names):
         filtered_combinations = filter_combinations(all_combinations, conditions)
 
         # 将过滤后的组合存储至json
-        path = f'/tmp/Momo_test/{lib_name}_combinations_{j}.json'
+        path = f'/tmp/Momo_test/arg_combinations/{lib_name}_combinations_{j}.json'
 
         if os.path.exists(path):
             if is_file_too_large(path, max_size_mb=10):
@@ -107,6 +107,11 @@ def base_condition_filter(api_names):
                 append_filtered_combinations_to_json(path, function_name, filtered_combinations)
             else:
                 append_filtered_combinations_to_json(path, function_name, filtered_combinations)
+        else:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w') as f:
+                json.dump({}, f)  # 创建一个空的JSON文件
+            append_filtered_combinations_to_json(path, function_name, filtered_combinations)
 
         
         add_log(f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
