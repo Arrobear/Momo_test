@@ -69,7 +69,7 @@ def base_condition_filter(api_names):
 
     # j: json文件编号
     j = 0
-    path = f'/tmp/Momo_test/arg_combinations/{lib_name}_combinations_{j}.json'
+    
     while(True):
         # 获取函数名
 
@@ -94,7 +94,7 @@ def base_condition_filter(api_names):
         filtered_combinations = filter_combinations(all_combinations, conditions)
 
         # 将过滤后的组合存储至json
-        
+        path = f'/tmp/Momo_test/arg_combinations/{lib_name}_combinations_{j}.json'
         if os.path.exists(path):
             if is_file_too_large(path, max_size_mb=10):
                 # 如果文件过大，换一个新文件
