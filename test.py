@@ -40,20 +40,11 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
 # json_path = Path(__file__).parent / "conditions" / f"{lib_name}_conditions.json"
 # print(get_api_conditions("torch.initial_seed", str(json_path)))
 
-api_names = read_file(f"{lib_name}_APIdef.txt")
+api_name = "torch.nn.utils.rnn.pack_sequence"
+j = 0
+print(get_all_combinations_from_json(api_name, j))
 
-function_name = filter_samenames(558, "tf.keras.Model", api_names)
 
-args = get_all_parameters(function_name)
-print(args)
-all_combinations = generate_all_combinations(args)
-print(all_combinations)
-
-json_path = Path(__file__).parent / "conditions" / f"{lib_name}_conditions.json"
-
-conditions = get_api_conditions(function_name, str(json_path))
-
-print
 
 
 

@@ -20,7 +20,7 @@ def generate_api_conditions(api_names):
     # model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True, device_map={"": gpu_ids[0]} )
     # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
-
+    log_path = f'/tmp/Momo_test/{lib_name}_log.txt'
     i = 0
 
     while(True):
@@ -33,7 +33,7 @@ def generate_api_conditions(api_names):
         i += 1
         api_doc = get_doc(function_name)
         if api_doc == False:
-            add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            add_log(log_path ,f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
 
         # 生成prompt
@@ -49,13 +49,14 @@ def generate_api_conditions(api_names):
         outputs = generate_output(inputs, model, tokenizer)
         # 解码输出
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        add_log("模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+        add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
         
         api_conditions = handle_output(outputs_text, model_path)
 
         #存储至json
-        append_api_condition_to_json(f'/tmp/Momo_test/{lib_name}_conditions.json', function_name, api_conditions)
-        add_log(f"已完成{function_name}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
+        path = f'/tmp/Momo_test/{lib_name}_conditions.json'
+        append_api_condition_to_json(path, function_name, api_conditions)
+        add_log(log_path, f"已完成{function_name}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
         # if i >= 50:
@@ -66,7 +67,7 @@ def base_condition_filter(api_names):
         api_defs = [line.strip() for line in file]
 
     i = 0
-
+    log_path = f'/tmp/Momo_test/arg_combinations/{lib_name}_log.txt'
     # j: json文件编号
     j = 0
     
@@ -74,7 +75,6 @@ def base_condition_filter(api_names):
         # 获取函数名
 
         fun_string = api_names[i]
-        api_def = api_defs[i]
         function_name = filter_samenames(i, fun_string, api_names)
 
         # 得到所有合法参数→生成所有组合→过滤合法组合→存储至json
@@ -112,16 +112,69 @@ def base_condition_filter(api_names):
             append_filtered_combinations_to_json(path, function_name, filtered_combinations)
 
         
-        add_log(f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
+        add_log(log_path ,f"已完成{function_name}的条件过滤, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
             break
 
-# def check_condition_filter(api_names):
-#     # 读取json文件，每次读取一个函数的合理参数组合数组(若过大，则分批读取)
-#     arg_combinations = get_all_combinations_from_json()
-#     # 遍历每个函数的组合，检查是否满足条件
-#     houdle_combinations(arg_combinations)
-#     # 输出（从json中删除）不满足条件的组合
-    
+def check_condition_filter(api_names):
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+        api_defs = [line.strip() for line in file]
+
+    i = 0   #ｉ：循环变量
+    j = 0   #ｊ：json文件编号
+
+    log_path = f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt'
+
+
+    while True:
+        # 读取json文件，每次读取一个函数的合理参数组合数组(若过大，则分批读取)
+        error_combinations = []
+
+        # 遍历每个函数的组合，检查是否满足条件
+        fun_string = api_names[i]
+        api_def = api_defs[i]   
+        function_name = filter_samenames(i, fun_string, api_names)
+        i += 1
+
+        arg_combinations, j = get_all_combinations_from_json(function_name, j)
+        api_doc = get_doc(function_name)
+        if api_doc == False:
+            add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            continue
+
+
+        for arg_combination in arg_combinations:
+
+            # 输出（从json中删除）不满足条件的组合
+            prompt_2 = generate_prompt_2(fun_string, api_def, api_doc)
+        
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token  # 常见做法
+            inputs = generate_input(prompt_2, tokenizer, model)
+
+            # 把inputs放到模型参数所在设备
+            inputs = inputs.to(next(model.parameters()).device)
+
+            outputs = generate_output(inputs, model, tokenizer)
+            # 解码输出
+            outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+            
+            error_tag = handle_output(outputs_text, model_path)
+            if error_tag == False:
+                error_combinations.append(arg_combination)
+                add_log(log_path, f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录")
+
+
+        path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'  # 非法参数组合文件路径
+        append_filtered_combinations_to_json(path, function_name, error_combinations)
+
+
+        # if i >= len(api_names):
+        if i >= 1:
+            break
 

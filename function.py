@@ -334,10 +334,10 @@ def get_api_conditions(fun_string, file_path):
         return None
 
 # 记录log
-def add_log(log):
+def add_log(path, log):
     #with open(f'/tmp/Momo_test/{lib_name}_log.txt', "a", encoding="utf-8") as f:
     # with open(r'C:\Users\86184\Desktop\torch_log.txt', "a", encoding="utf-8") as f:
-    file_path = f'/tmp/Momo_test/{lib_name}_filter_log.txt'
+    file_path = path
     
     # 确保目录和文件都存在
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -502,3 +502,24 @@ def filter_samenames(i ,fun_string, api_names):
     else:
         function_name = fun_string
     return function_name
+
+
+def get_all_combinations_from_json(api_name, j):
+    # path = f'/tmp/Momo_test/arg_combinations/{lib_name}_combinations_{j}.json'
+    path = f'C:/Users/86184/Desktop/torch_combinations.json'
+    try:
+    # 读取JSON文件
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # 提取api_name项
+        args_combinations = data.get(api_name)
+        return args_combinations, j
+    except KeyError:
+        j += 1
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # 提取api_name项
+        args_combinations = data.get(api_name)
+        return args_combinations, j

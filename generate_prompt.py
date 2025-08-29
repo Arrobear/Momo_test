@@ -141,19 +141,35 @@ def generate_prompt_2(fun_string, args, api_def, api_doc):
     The specific API documentation content is as below:
     [{api_doc}]
 
-
-
+    \n(2) Parameter Combination
+    Parameter combination refers to the reasonable composition of parameters when calling APIs.
+    One parameter combination for this API is as follows:
+    {args}
+    
     \n---
     \n3. Your Tasks:
     Based on the explicit definition of the API and the API documentation, especially the "Args" part in the API documentation: 
-
+    Determine whether the parameter combination provided in the 'Parameter Combination' section is a valid input for the given API.
 
     \n---
     \n4.Output Format:
- 
+
+    True or False
 
     \n---
     \n5.Examples:
     Output Examples: 
 
+    True
+
     '''
+    system_prompt = '''
+        You are an assistant who strictly follows user instructions. Response must be made only according to the following rules:\n
+        1. The answer format must be completely consistent with the output format specified by the user;\n
+        2. Prohibit autonomous extension, interpretation, or modification of user instructions.\n
+        '''
+    prompt = [
+            {"role": "system", "content": system_prompt}, 
+            {"role": "user", "content": ori_prompt}
+        ]
+    return prompt
