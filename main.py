@@ -14,9 +14,10 @@ if __name__ == "__main__":
   #generate_api_conditions(api_names)
    
   # 生成所有可能的组合
-  base_condition_filter(api_names)
+  # base_condition_filter(api_names)
 
-
+  # 调用大模型检查参数组合是否合法
+  check_condition_filter(api_names)
 
   '''
     补充实验代码

@@ -149,8 +149,8 @@ def check_condition_filter(api_names):
 
         for arg_combination in arg_combinations:
 
-            # 输出（从json中删除）不满足条件的组合
-            prompt_2 = generate_prompt_2(fun_string, api_def, api_doc)
+            # 输出（从json中删除）不满足条件的组合  fun_string, args, api_def, api_doc
+            prompt_2 = generate_prompt_2(fun_string,arg_combination, api_def, api_doc)
         
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token  # 常见做法
@@ -165,7 +165,8 @@ def check_condition_filter(api_names):
             add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
             
             error_tag = handle_output(outputs_text, model_path)
-            if error_tag == False:
+            # add_log(log_path, error_tag)
+            if 'False' in error_tag:
                 error_combinations.append(arg_combination)
                 add_log(log_path, f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录")
 
@@ -174,7 +175,7 @@ def check_condition_filter(api_names):
         append_filtered_combinations_to_json(path, function_name, error_combinations)
 
 
-        # if i >= len(api_names):
-        if i >= 1:
+        if i >= len(api_names):
+        # if i >= 1:
             break
 
