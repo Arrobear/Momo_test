@@ -162,14 +162,15 @@ def check_condition_filter(api_names):
             outputs = generate_output(inputs, model, tokenizer)
             # 解码输出
             outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+            
             
             error_tag = handle_output(outputs_text, model_path)
             # add_log(log_path, error_tag)
             if 'False' in error_tag:
                 error_combinations.append(arg_combination)
+                
                 add_log(log_path, f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录")
-
+                add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
 
         path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'  # 非法参数组合文件路径
         append_filtered_combinations_to_json(path, function_name, error_combinations)
