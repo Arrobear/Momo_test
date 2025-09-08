@@ -124,8 +124,8 @@ def check_condition_filter(api_names):
     with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
-    i = 0   #ｉ：循环变量
-    j = 0   #ｊ：json文件编号
+    i = 119   #ｉ：循环变量
+    j = 1   #ｊ：json文件编号
 
     log_path = f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt'
 
@@ -171,6 +171,8 @@ def check_condition_filter(api_names):
                 
                 add_log(log_path, f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录"+f"函数文件编号 = {j}")
                 add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+        
+        add_log(log_path, f" {function_name} 的参数组合已确认，当前函数文件编号 = {j}")
 
         path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'  # 非法参数组合文件路径
         append_filtered_combinations_to_json(path, function_name, error_combinations)

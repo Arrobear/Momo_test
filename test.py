@@ -40,7 +40,7 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
 # json_path = Path(__file__).parent / "conditions" / f"{lib_name}_conditions.json"
 # print(get_api_conditions("torch.initial_seed", str(json_path)))
 
-api_name = "torch.nn.utils.rnn.pack_sequence"
+api_name = "tf.io.parse_single_sequence_example"
 j = 0
 print(get_all_combinations_from_json(api_name, j))
 

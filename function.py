@@ -505,21 +505,25 @@ def filter_samenames(i ,fun_string, api_names):
 
 
 def get_all_combinations_from_json(api_name, j):
-    path = f'/tmp/Momo_test/arg_combinations/{lib_name}_combinations_{j}.json'
     # path = f'C:/Users/86184/Desktop/torch_combinations.json'
     try:
     # 读取JSON文件
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(f'/nasdata/haoyahui/Arg_combinations/{lib_name}_combinations_{j}.json', 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         # 提取api_name项
         args_combinations = data.get(api_name)
-        return args_combinations, j
+        
     except KeyError:
-        j += 1
-        with open(path, 'r', encoding='utf-8') as f:
+        return False
+
+    if args_combinations == None:
+        k = 1 + j
+        with open(f'/nasdata/haoyahui/Arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         # 提取api_name项
         args_combinations = data.get(api_name)
+        return args_combinations, k
+    else:
         return args_combinations, j
