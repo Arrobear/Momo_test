@@ -43,8 +43,13 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
 
 
 
-print(extract_invalid_parameter_combinations())
-
+# print(extract_invalid_parameter_combinations()[0][1])
+# try:
+#     with open(r'C:\Users\86184\Desktop\test.txt', 'r', encoding='utf-8') as f:
+#         content = f.read()
+#         print("文件内容预览（前500字符）:", content[:500])
+# except:
+#     print("无法读取文件内容")
 
 
 

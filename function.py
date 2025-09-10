@@ -530,18 +530,10 @@ def get_all_combinations_from_json(api_name, j):
 
 # 过滤错误组合时断点续生成
 def extract_invalid_parameter_combinations():
-    """
-    从txt文件中提取所有不合法的参数组合
-    
-    参数:
-        file_path (str): 要读取的txt文件路径
-        
-    返回:
-        list: 包含所有找到的参数组合的二维数组
-    """
-
+    #file_path = r'C:\Users\86184\Desktop\test.txt'
     file_path = f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt'
-    pattern = r"tf.keras.optimizers.Ftrl 的参数组合 $$'(.*?)'$$ 可能不合法"
+    pattern = r"tf\.keras\.optimizers\.Ftrl 的参数组合 (.*?) 可能不合法"
+
     result = []
     
     try:
@@ -552,14 +544,8 @@ def extract_invalid_parameter_combinations():
             for match in re.finditer(pattern, content, re.DOTALL):
                 # 提取参数组合部分
                 params_str = match.group(1)
-                print(params_str)
-                # 清理字符串：去除换行、多余空格和引号
-                params_str = params_str.replace('\n', '').strip()
-                # 分割参数
-                params_list = [param.strip().strip("'") for param in params_str.split(",")]
-                # 过滤掉空字符串
-                params_list = [param for param in params_list if param]
-                result.append(params_list)
+                array = eval(params_str)
+                result.append(array)
 
     except FileNotFoundError:
         print(f"错误：文件 {file_path} 未找到")

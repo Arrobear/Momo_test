@@ -140,6 +140,11 @@ def check_condition_filter(api_names):
         function_name = filter_samenames(i, fun_string, api_names)
         i += 1
 
+        if fun_string == "tf.keras.optimizers.Ftrl":
+            last_result = extract_invalid_parameter_combinations()
+            for i in last_result:
+                error_combinations.append(i)
+                
         arg_combinations, j = get_all_combinations_from_json(function_name, j)
         api_doc = get_doc(function_name)
         if api_doc == False:
