@@ -540,19 +540,27 @@ def extract_invalid_parameter_combinations():
         list: 包含所有找到的参数组合的二维数组
     """
 
-    file_path = f'/tmp/Momo_test/arg_combinations/{lib_name}_log.txt'
+    file_path = f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt'
     pattern = r"tf.keras.optimizers.Ftrl 的参数组合 $$'(.*?)'$$ 可能不合法"
     result = []
     
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
-            for line in file:
-                match = re.search(pattern, line)
-                if match:
-                    # 提取参数组合字符串并分割成列表
-                    params_str = match.group(1)
-                    params_list = [param.strip() for param in params_str.split("', '")]
-                    result.append(params_list)
+            content = file.read()
+            
+            # 使用finditer查找所有匹配项
+            for match in re.finditer(pattern, content, re.DOTALL):
+                # 提取参数组合部分
+                params_str = match.group(1)
+                print(params_str)
+                # 清理字符串：去除换行、多余空格和引号
+                params_str = params_str.replace('\n', '').strip()
+                # 分割参数
+                params_list = [param.strip().strip("'") for param in params_str.split(",")]
+                # 过滤掉空字符串
+                params_list = [param for param in params_list if param]
+                result.append(params_list)
+
     except FileNotFoundError:
         print(f"错误：文件 {file_path} 未找到")
     except Exception as e:
