@@ -527,3 +527,35 @@ def get_all_combinations_from_json(api_name, j):
         return args_combinations, k
     else:
         return args_combinations, j
+
+# 过滤错误组合时断点续生成
+def extract_invalid_parameter_combinations():
+    """
+    从txt文件中提取所有不合法的参数组合
+    
+    参数:
+        file_path (str): 要读取的txt文件路径
+        
+    返回:
+        list: 包含所有找到的参数组合的二维数组
+    """
+
+    file_path = f'/tmp/Momo_test/arg_combinations/{lib_name}_log.txt'
+    pattern = r"tf.keras.optimizers.Ftrl 的参数组合 $$'(.*?)'$$ 可能不合法"
+    result = []
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                match = re.search(pattern, line)
+                if match:
+                    # 提取参数组合字符串并分割成列表
+                    params_str = match.group(1)
+                    params_list = [param.strip() for param in params_str.split("', '")]
+                    result.append(params_list)
+    except FileNotFoundError:
+        print(f"错误：文件 {file_path} 未找到")
+    except Exception as e:
+        print(f"读取文件时发生错误：{e}")
+    
+    return result
