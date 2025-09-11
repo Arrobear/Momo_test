@@ -41,7 +41,7 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
 # print(get_api_conditions("torch.initial_seed", str(json_path)))
 
 
-
+torch.nn.functional.conv1d
 
 # print(extract_invalid_parameter_combinations()[0][1])
 # try:
@@ -50,7 +50,6 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
 #         print("文件内容预览（前500字符）:", content[:500])
 # except:
 #     print("无法读取文件内容")
-
 
 
 
