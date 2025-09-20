@@ -2,7 +2,7 @@
 
 # 设置你要运行的 Python 程序路径
 PYTHON_SCRIPT="/nasdata/haoyahui/Momo_test/main.py"
-PYTHON_SCRIPT_M="/nasdata/haoyahui/Momo_test/monitor_gpu_3.py"
+PYTHON_SCRIPT_M="/nasdata/haoyahui/Momo_test/monitor/monitor_gpu_4.py"
 
 # 显存使用阈值（单位：MiB）
 THRESHOLD=5000

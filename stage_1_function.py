@@ -25,6 +25,8 @@ append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件
 add_log(log)：打印日志到控制台和文件
 '''
 
+a = 1
+
 def filter_apidocument(api_doc):
     # 定义正则表达式模式，匹配See :class:`~到` for more details.之间的内容
     if lib_name == "torch":

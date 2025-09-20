@@ -1,5 +1,5 @@
 from config import *
-from function import *
+from stage_1_function import *
 from generate_prompt import *
 '''
 存储整个方法中的小步骤 
@@ -11,7 +11,7 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 
 
 def generate_api_conditions(api_names):
-    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     # 加载模型
@@ -63,7 +63,7 @@ def generate_api_conditions(api_names):
             break
 
 def base_condition_filter(api_names):
-    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     i = 0
@@ -121,7 +121,7 @@ def check_condition_filter(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
-    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     large_combination_api = []
@@ -212,3 +212,4 @@ def check_condition_filter(api_names):
 
     # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"以下函数因参数过多，可能导致组合过大，未进行检查：{large_combination_api}")
 
+a = 1

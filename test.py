@@ -1,6 +1,5 @@
 from config import *
-from function import *
-from main import *
+from stage_1_function import *
 from generate_prompt import *
 
 def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
@@ -29,9 +28,9 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
         return False
 
 # 测试代码区
-# with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+# with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
 #     api_defs = [line.strip() for line in file]
-# api_names = read_file(f"{lib_name}_APIdef.txt")
+# api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
 # for i in range(len(api_names)):
 #     args = get_all_parameters(api_names[i], api_defs[i])
 #     append_to_txt_file(f'C:/Users/86184/Desktop/{lib_name}_args.txt', f"{api_names[i]}: {args}", mode='a', encoding='utf-8')
@@ -41,7 +40,8 @@ def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
 # print(get_api_conditions("torch.initial_seed", str(json_path)))
 
 
-torch.nn.functional.conv1d
+tmp_str = "torch.nn.functional.conv1d"
+print(tmp_str)
 
 # print(extract_invalid_parameter_combinations()[0][1])
 # try:
@@ -51,8 +51,7 @@ torch.nn.functional.conv1d
 # except:
 #     print("无法读取文件内容")
 
-arg_combinations, j = get_all_combinations_from_json('tf.keras.optimizers.Adadelta', 0)
-print(len(arg_combinations),j)
+
 
  #测试用函数
 
@@ -68,7 +67,7 @@ def log_analysis():
       
 
 def test_api_doc():
-    with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     a = "tf.queue.QueueBase"
@@ -77,7 +76,7 @@ def test_api_doc():
     abandoned_apis = []
     numpy_redefined_apis = []
     if a == "0":
-        api_names = read_file(f"{lib_name}_APIdef.txt")
+        api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
 
         for i in range(len(api_names)):
 

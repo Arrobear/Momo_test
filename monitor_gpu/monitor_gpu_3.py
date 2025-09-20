@@ -1,15 +1,19 @@
 import torch
 import time
-import os
 import subprocess
-from config import *
-from function import *
-from generate_prompt import *
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import config
+import stage_1_function
+import generate_prompt
+
 # ======== 配置区域 ========
-print(gpu_ids)
+print(config.gpu_ids)
 
 def monitor_gpu():
-    GPU_INDICES = [gpu_ids[0]]  # 要抢占的 GPU 编号
+    GPU_INDICES = [config.gpu_ids[0]]  # 要抢占的 GPU 编号
     TARGET_MB = 80000     # 每张卡的目标显存（MiB）
     ALLOC_MB = 4096        # 每次分配大小（MiB）
 
