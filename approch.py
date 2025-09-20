@@ -124,10 +124,10 @@ def check_condition_filter(api_names):
     with open(f"{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
-    i = 119   #ｉ：循环变量
-    j = 1   #ｊ：json文件编号
+    large_combination_api = []
 
-    log_path = f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt'
+    i = 3   #ｉ：循环变量
+    j = 0   #ｊ：json文件编号
 
 
     while True:
@@ -136,27 +136,49 @@ def check_condition_filter(api_names):
 
         # 遍历每个函数的组合，检查是否满足条件
         fun_string = api_names[i]
-        api_def = api_defs[i]   
+        for def_ in api_defs:
+            if fun_string in def_:
+                api_def = def_
+                break
+          
         function_name = filter_samenames(i, fun_string, api_names)
         i += 1
 
-        if fun_string == "tf.keras.optimizers.Ftrl":
-            last_result = extract_invalid_parameter_combinations()
-            for i in last_result:
-                error_combinations.append(i)
-                
+        # args = get_all_parameters(function_name)
+
+
+        # if fun_string == "tf.keras.optimizers.Ftrl":
+        #     last_result = extract_invalid_parameter_combinations()
+        #     for k in last_result:
+        #         error_combinations.append(k)
+        # else:
+        #     if len(args) > 10:
+        #         large_combination_api.append(function_name)
+        #         add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"[警告] {function_name} 的参数过多，可能导致组合过大，暂时跳过该函数")
+        #         continue
+        
         arg_combinations, j = get_all_combinations_from_json(function_name, j)
         api_doc = get_doc(function_name)
         if api_doc == False:
-            add_log(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt',f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
 
+        # last_combination = ['learning_rate', 'initial_accumulator_value', 'l1_regularization_strength', 'name', 'l2_shrinkage_regularization_strength', 'weight_decay', 'clipnorm', 'clipvalue', 'ema_momentum', 'ema_overwrite_frequency', 'loss_scale_factor', 'gradient_accumulation_steps']
+        # last_key = False
         
+        add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt',f"准备检查 {function_name} 的参数组合，共 {len(arg_combinations)} 组, 当前函数文件编号 = {j}")
+        n = 0  # 进度计数
+
         for arg_combination in arg_combinations:
+        #     if last_key == False:
+        #         if arg_combination == last_combination:
+        #             last_key = True
+        #             continue
+        #         continue
 
             # 输出（从json中删除）不满足条件的组合  fun_string, args, api_def, api_doc
             prompt_2 = generate_prompt_2(fun_string,arg_combination, api_def, api_doc)
-        
+
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token  # 常见做法
             inputs = generate_input(prompt_2, tokenizer, model)
@@ -168,16 +190,17 @@ def check_condition_filter(api_names):
             # 解码输出
             outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             
-            
             error_tag = handle_output(outputs_text, model_path)
             # add_log(log_path, error_tag)
             if 'False' in error_tag:
                 error_combinations.append(arg_combination)
                 
-                add_log(log_path, f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录"+f"函数文件编号 = {j}")
-                add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
-        
-        add_log(log_path, f" {function_name} 的参数组合已确认，当前函数文件编号 = {j}")
+                add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录"+f"函数文件编号 = {j}")
+                add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+            
+            n += 1
+            print("当前进度："+str(n)+"/"+str(len(arg_combinations)))
+        add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f" {function_name} 的参数组合已确认，当前函数文件编号 = {j}")
 
         path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'  # 非法参数组合文件路径
         append_filtered_combinations_to_json(path, function_name, error_combinations)
@@ -186,4 +209,6 @@ def check_condition_filter(api_names):
         if i >= len(api_names):
         # if i >= 1:
             break
+
+    # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"以下函数因参数过多，可能导致组合过大，未进行检查：{large_combination_api}")
 

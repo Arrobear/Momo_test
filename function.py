@@ -506,27 +506,24 @@ def filter_samenames(i ,fun_string, api_names):
 
 def get_all_combinations_from_json(api_name, j):
     # path = f'C:/Users/86184/Desktop/torch_combinations.json'
-    try:
-    # 读取JSON文件
-        with open(f'/nasdata/haoyahui/Arg_combinations/{lib_name}_combinations_{j}.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # 提取api_name项
-        args_combinations = data.get(api_name)
-        
-    except KeyError:
-        return False
+    k = j
+    while True:
+        try:
+        # 读取JSON文件
+            with open(f'/nasdata/haoyahui/Arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # 提取api_name项
+            args_combinations = data.get(api_name)
+            
+        except KeyError:
+            return False
 
-    if args_combinations == None:
-        k = 1 + j
-        with open(f'/nasdata/haoyahui/Arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # 提取api_name项
-        args_combinations = data.get(api_name)
-        return args_combinations, k
-    else:
-        return args_combinations, j
+        if args_combinations == None:
+            k += 1
+            continue
+        else:
+            return args_combinations, k
 
 # 过滤错误组合时断点续生成
 def extract_invalid_parameter_combinations():

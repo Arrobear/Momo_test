@@ -17,7 +17,7 @@ if __name__ == "__main__":
   # base_condition_filter(api_names)
 
   # 调用大模型检查参数组合是否合法
-  check_condition_filter(api_names)
+  check_condition_filter(large_combination_list)
 
   '''
     补充实验代码

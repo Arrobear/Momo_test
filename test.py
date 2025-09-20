@@ -51,7 +51,8 @@ torch.nn.functional.conv1d
 # except:
 #     print("无法读取文件内容")
 
-
+arg_combinations, j = get_all_combinations_from_json('tf.keras.optimizers.Adadelta', 0)
+print(len(arg_combinations),j)
 
  #测试用函数
 
