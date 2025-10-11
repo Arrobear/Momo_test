@@ -25,7 +25,7 @@ append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件
 add_log(log)：打印日志到控制台和文件
 '''
 
-a = 1
+
 
 def filter_apidocument(api_doc):
     # 定义正则表达式模式，匹配See :class:`~到` for more details.之间的内容
@@ -376,7 +376,6 @@ def append_filtered_combinations_to_json(path, fun_string, new_data):
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-
 # 读取JSON文件中的过滤好的参数组合
 def is_file_too_large(file_path, max_size_mb=10):
     """
@@ -401,7 +400,6 @@ def is_file_too_large(file_path, max_size_mb=10):
     except Exception as e:
         print(f"检查文件大小时发生错误：{e}")
         return False
-
 
 
 # 手动处理output
@@ -552,3 +550,5 @@ def extract_invalid_parameter_combinations():
         print(f"读取文件时发生错误：{e}")
     
     return result
+
+

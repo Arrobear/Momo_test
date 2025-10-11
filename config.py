@@ -10,6 +10,17 @@ import sys
 from accelerate import infer_auto_device_map, init_empty_weights
 from torch_samename import *
 from pathlib import Path
+import yaml
+import importlib
+import inspect
+import types
+import ast
+import textwrap
+import requests
+import subprocess
+import time
+import uuid
+from cpgqls_client import *
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
@@ -18,7 +29,10 @@ model_path = "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
-lib_name = "tf"  # 库名称
+lib_name = "torch"  # 库名称
+
+# joern_project  = "pytorch-2.5.1" # joern 项目名
+joern_project  = "pytorch-2.5.1" # joern 项目名
 
 gpu_str = os.environ.get("FREE_GPUS", "")
 
@@ -80,3 +94,10 @@ large_combination_list = ['tf.keras.optimizers.Adadelta',
                              'tf.keras.layers.LSTM', 
                              'tf.data.experimental.make_batched_features_dataset', 
                              'tf.strided_slice']
+
+factory_names = {
+    "zeros", "ones", "empty", "full",
+    "rand", "randn", "rand_like", "randn_like",
+    "eye", "arange", "linspace", "logspace",
+    "tensor", "as_tensor"
+}

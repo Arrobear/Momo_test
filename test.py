@@ -1,56 +1,124 @@
 from config import *
 from stage_1_function import *
 from generate_prompt import *
+from generate_prompt import *
+from stage_2_function import *
 
-def append_to_txt_file(file_path, content, mode='a', encoding='utf-8'):
-    """
-    将字符串内容添加到文本文件中
-    
-    参数:
-        file_path (str): 目标文件的路径
-        content (str): 要添加的内容
-        mode (str): 文件打开模式，默认为'a'(追加)
-                   'a' - 追加(文件不存在则创建)
-                   'w' - 写入(会覆盖原有内容)
-        encoding (str): 文件编码，默认为'utf-8'
-    
-    返回:
-        bool: 操作是否成功
-    """
-    try:
-        with open(file_path, mode, encoding=encoding) as file:
-            file.write(content)
-            if not content.endswith('\n'):  # 如果内容不以换行符结尾，自动添加
-                file.write('\n')
-        return True
-    except Exception as e:
-        print(f"写入文件时出错: {e}")
-        return False
+
+# 示例  
+def parse_scala_list(scala_output: str):
+
+    # 提取 List(...) 中的内容
+    items = re.findall(r'"(.*?)"', scala_output)
+    return items
+
+
+
+joern = JoernShell("C:/Users/86184/Desktop/joern-cli/joern.bat")
+cpp_func_name = "conv1d_symint"
+
+query = open_query("pytorch-2.5.1")
+joern.send_command(query)
+
+torch_cheack = joern.send_command(f"cpg.method.name(\"{cpp_func_name}\").call.name(\"TORCH_CHECK\").argument.order(1).code.l")
+torch_contorl = joern.send_command(f"cpg.method.name(\"{cpp_func_name}\").controlStructure.filterNot(_.controlStructureType == \"SWITCH\").condition.code.l")
+print("torch_control_str:", type(torch_cheack), len(torch_cheack), torch_cheack)  
+print("torch_control_str:", type(torch_contorl), len(torch_contorl), torch_contorl)  
+
+parsed_list = parse_scala_list(torch_cheack)
+print(parsed_list)
+parsed_list = parse_scala_list(torch_contorl)
+print(parsed_list)
+
+
+
+# query_1_forhalf= f"cpg.method.name(\"{c_api_1}\")"
+# query_1_backhalf = r""".ast.isControlStructure.filter(_.code.startsWith("switch")).foreach { sw => val cond = sw.code.split("\\(")(1).split("\\)")(0).trim; val cases = sw.astChildren.flatMap(_.astChildren).filter(n => n.code.startsWith("case") || n.code.startsWith("default")).toSeq.map(n => if (n.code.startsWith("case")) n.code.split(":")(0).replace("case","").trim else "default"); println(cond + "->" + cases.mkString(",")) }"""
+
+# c_method_info = joern.send_command(query_1_forhalf + query_1_backhalf)
+
+# print(c_method_info)
+
+joern.send_command("exit")   # 退出 Joern
+
+# # 如果 bat 文件需要手动 exit，添加 exit
+ 
+# # 循环写入命令
+# # for cmd in commands:
+# process.stdin.write(query+"\n")  # 写入命令
+# process.stdin.flush()
+# process.stdin.write(f"cpg.method.name(\"{c_api}\").l\n")  # 强制刷新缓冲区
+# process.stdin.flush()
+# #process.stdin.write("")  # 强制刷新缓冲区
+# #process.stdin.flush()  # 强制刷新缓冲区
+
+# # 获取输出
+# stdout, stderr = process.communicate()
+# print("输出:\n", stdout)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # 测试代码区
-# with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
-#     api_defs = [line.strip() for line in file]
-# api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
-# for i in range(len(api_names)):
-#     args = get_all_parameters(api_names[i], api_defs[i])
-#     append_to_txt_file(f'C:/Users/86184/Desktop/{lib_name}_args.txt', f"{api_names[i]}: {args}", mode='a', encoding='utf-8')
 
 
-# json_path = Path(__file__).parent / "conditions" / f"{lib_name}_conditions.json"
-# print(get_api_conditions("torch.initial_seed", str(json_path)))
+# 要提取的模块列表（可以根据需要扩展）
+
+# import torch.nn.functional as F
+# import torch.linalg
+# import torch.fft
 
 
-tmp_str = "torch.nn.functional.conv1d"
-print(tmp_str)
+# # 模块列表
+# modules_to_extract = [
+#     ("torch", torch),
+#     ("torch.nn.functional", F),
+#     ("torch.linalg", torch.linalg),
+#     ("torch.fft", torch.fft)
+# ]
 
-# print(extract_invalid_parameter_combinations()[0][1])
-# try:
-#     with open(r'C:\Users\86184\Desktop\test.txt', 'r', encoding='utf-8') as f:
-#         content = f.read()
-#         print("文件内容预览（前500字符）:", content[:500])
-# except:
-#     print("无法读取文件内容")
+# apis = []
 
+# def extract_function_names(module, module_name):
+#     """提取模块的函数名，不包含参数"""
+#     for name, obj in inspect.getmembers(module):
+#         if name.startswith("_"):
+#             continue  # 忽略私有函数
+#         if inspect.isfunction(obj) or inspect.isbuiltin(obj) or inspect.ismethod(obj):
+#             apis.append(f"{module_name}.{name}")
+
+# # 提取每个模块的函数名
+# for mod_name, mod in modules_to_extract:
+#     extract_function_names(mod, mod_name)
+
+
+# # 去重、排序
+# apis = sorted(set(apis))
+
+# # 写入文件
+# with open("torch_function_names.txt", "w", encoding="utf-8") as f:
+#     for api in apis:
+#         f.write(api + "\n")
+
+# print(f"收集到 {len(apis)} 个函数名，已保存到 torch_function_names.txt")
 
 
  #测试用函数

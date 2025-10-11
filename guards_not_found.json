@@ -1,0 +1,28 @@
+[
+    "100个api中未提取到guards的api，其中约有一半找不到实现：",
+    "torch.nn.functional.avg_pool1d",
+    "torch.nn.functional.max_pool1d",
+    "torch.nn.functional.max_pool3d",
+    "torch.nn.functional.adaptive_max_pool1d",
+    "torch.nn.functional.adaptive_max_pool2d",
+    "torch.nn.functional.adaptive_avg_pool1d",
+    "torch.nn.functional.threshold_",
+    "torch.nn.functional.hardtanh_",
+    "torch.nn.functional.elu_",
+    "torch.nn.functional.leaky_relu_",
+    "torch.nn.functional.prelu",
+    "torch.nn.functional.rrelu_",
+    "torch.nn.functional.logsigmoid",
+    "torch.nn.functional.hardshrink",
+    "torch.nn.functional.softplus",
+    "torch.nn.functional.softshrink",
+    "torch.nn.functional.tanh",
+    "torch.nn.functional.sigmoid",
+    "torch.nn.functional.bilinear",
+    "torch.nn.functional.one_hot",
+    "torch.nn.functional.pairwise_distance",
+    "torch.nn.functional.cosine_similarity",
+    "torch.nn.functional.pdist",
+    "torch.nn.functional.upsample"
+]
+
