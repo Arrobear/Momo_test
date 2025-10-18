@@ -4,7 +4,7 @@ from stage_1_function import *
 
 TORCH_PATH = Path("C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1") # 修改为本地 PyTorch 源码根目录
 YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml"
-joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
+
 
 # =====================================================
 # Joirn 交互式封装
@@ -85,60 +85,67 @@ def parse_scala_list(scala_output: str):
 # 判断 torch库中的 API 类型
 def torch_api_classify(api_name: str) -> str:
     """
-    改进版 PyTorch API 分类器
+    强化版 PyTorch API 分类器。
+    支持：Python 层 + C++ 层 + YAML fallback。
     """
     try:
         mod_name, attr_name = api_name.rsplit(".", 1)
         mod = importlib.import_module(mod_name)
         obj = getattr(mod, attr_name)
     except Exception:
-        return "unknown"
+        obj = None
 
-    # 1️⃣ nn.functional → function
-    if "torch.nn.functional" in mod_name:
+    # 1️⃣ nn.functional 明确为 function
+    if "torch.nn.functional" in api_name:
         return "function"
 
-    # 2️⃣ 类对象
-    if inspect.isclass(obj):
+    # 2️⃣ 类
+    if obj and inspect.isclass(obj):
         return "class"
 
-    # 3️⃣ Tensor 方法
-    if inspect.ismethoddescriptor(obj):
-        return "method"
-
-    # 4️⃣ Python 纯函数
-    if inspect.isfunction(obj):
-        return "function"
-
-    # 5️⃣ 工厂函数
-    factory_names = {"ones", "zeros", "arange", "randn", "empty", "full"}
-    if inspect.isbuiltin(obj) and attr_name in factory_names:
+    # 3️⃣ 工厂函数
+    factory_names = {"ones", "zeros", "empty", "full", "arange", "randn", "rand", "eye", "linspace"}
+    if attr_name in factory_names:
         return "factory"
 
-    # 6️⃣ C++ builtin (OpOverloadPacket / OpOverload)
+    # 4️⃣ 普通 Python 函数
+    if obj and inspect.isfunction(obj):
+        return "function"
+
+    # 5️⃣ Tensor 实例方法
+    if obj and inspect.ismethoddescriptor(obj):
+        return "method"
+
+    # 6️⃣ 尝试识别内建函数 / OpOverload
     obj_type = str(type(obj))
-    if (
-        "torch._ops" in obj_type
-        or hasattr(obj, "overloads")
-        or hasattr(obj, "default")
-        or hasattr(obj, "op")
-        or type(obj).__name__ in {"OpOverload", "OpOverloadPacket"}
-    ):
-        # 尝试判断是否有 Python 层包装
+    if obj and ("OpOverload" in obj_type or "OpOverloadPacket" in obj_type):
         try:
             src = inspect.getsourcefile(obj)
-            if src and "torch" in src and "site-packages" in src:
+            if src and "torch" in src and not src.endswith(".pyd"):
                 return "function"
         except Exception:
-            pass
+            return "builtin"
         return "builtin"
 
-    # 7️⃣ 常量
-    if isinstance(obj, (int, float, str, bool, tuple, list, dict)):
-        return "constant"
+    # 7️⃣ fallback：从 native_functions.yaml 查找
+    try:
+        import yaml
+        func_target = attr_name.split(".")[-1]
+        with open(YAML_PATH, "r", encoding="utf-8") as f:
+            yaml_docs = yaml.safe_load(f)
+        for entry in yaml_docs:
+            func = entry.get("func", "")
+            if func.startswith(func_target + "("):
+                return "builtin"
+    except Exception:
+        pass
 
+    # 8️⃣ torch._C / _ops 注册的直接算子
+    if "torch._C" in api_name or "torch._ops" in api_name:
+        return "builtin"
+
+    # 9️⃣ 全部失败，返回 unknown
     return "unknown"
-
 
 def torch_find_cpp_name(api_name: str) -> str:
     """
@@ -228,38 +235,99 @@ def torch_find_cpp_name(api_name: str) -> str:
     return None
 
 def torch_extract_cpp_guards(cpp_func_name: str) -> list:
-
+    """
+    使用 Joern 从 C++ 函数中提取 guard 条件，并自动生成正/反路径。
+    包含：
+        - TORCH_CHECK(cond)
+        - if(cond)
+        - for(cond)
+        - while(cond)
+        - switch(var)
+    返回：
+        cpp_guards: list[str]
+    """
     print(f"提取 C++ guards: {cpp_func_name}")
     cpp_guards = []
-    # cpp_func_name = "testGuards"  # 临时测试用
-    # -------- 3. 调用 joern 解析 C++ 层 guards --------
+
     joern = JoernShell(joern_bat_path)
     joern.send_command(f"open(\"{joern_project}\")")
-    torch_cheack = joern.send_command(f"cpg.method.name(\"{cpp_func_name}\").call.name(\"TORCH_CHECK\").argument.order(1).code.l")
-    print("torch_cheack_str:", torch_cheack)
-    cheack_gtards = parse_scala_list(torch_cheack)
 
-    torch_contorl = joern.send_command(f"cpg.method.name(\"{cpp_func_name}\").controlStructure.filterNot(_.controlStructureType == \"SWITCH\").condition.code.l")
-    print("torch_cheack_str:", torch_contorl)
-    contorl_gtards = parse_scala_list(torch_contorl)
+    # 1️⃣ TORCH_CHECK 条件
+    torch_check_str = joern.send_command(
+        f"cpg.method.name(\"{cpp_func_name}\").call.name(\"TORCH_CHECK\").argument.order(1).code.l"
+    )
+    torch_checks = parse_scala_list(torch_check_str)
+    for cond in torch_checks:
+        cpp_guards.append(cond)
+        cpp_guards.append(f"not ({cond})")
 
+    # 2️⃣ if 条件
+    if_str = joern.send_command(
+        f"cpg.method.name(\"{cpp_func_name}\").controlStructure.controlStructureType(\"IF\").condition.code.l"
+    )
+    if_conds = parse_scala_list(if_str)
+    for cond in if_conds:
+        body_code = joern.send_command(
+            f'cpg.method.name(\"{cpp_func_name}\").controlStructure.condition.code(\"{cond}\").astChildren.code.l'
+        )
+        if any(keyword in body_code for keyword in ["TORCH_CHECK", "throw", "return"]):
+            cpp_guards.append(f"not ({cond})")
+        else:
+            cpp_guards.append(cond)
+            cpp_guards.append(f"not ({cond})")
 
-    query_forhalf= f"cpg.method.name(\"{cpp_func_name}\")"
-    query_backhalf = r""".ast.isControlStructure.filter(_.code.startsWith("switch")).foreach { sw => val cond = sw.code.split("\\(")(1).split("\\)")(0).trim; val cases = sw.astChildren.flatMap(_.astChildren).filter(n => n.code.startsWith("case") || n.code.startsWith("default")).toSeq.map(n => if (n.code.startsWith("case")) n.code.split(":")(0).replace("case","").trim else "default"); println(cond + "->" + cases.mkString(",")) }"""
+    # 3️⃣ for 条件
+    for_str = joern.send_command(
+        f"cpg.method.name(\"{cpp_func_name}\").controlStructure.controlStructureType(\"FOR\").condition.code.l"
+    )
+    for_conds = parse_scala_list(for_str)
+    for cond in for_conds:
+        cpp_guards.append(cond)
+        cpp_guards.append(f"not ({cond})")
+
+    # 4️⃣ while 条件
+    while_str = joern.send_command(
+        f"cpg.method.name(\"{cpp_func_name}\").controlStructure.controlStructureType(\"WHILE\").condition.code.l"
+    )
+    while_conds = parse_scala_list(while_str)
+    for cond in while_conds:
+        cpp_guards.append(cond)
+        cpp_guards.append(f"not ({cond})")
+
+    # 5️⃣ switch 条件
+    query_forhalf = f"cpg.method.name(\"{cpp_func_name}\")"
+    query_backhalf = r""".ast.isControlStructure.filter(_.code.startsWith("switch")).foreach { sw => 
+        val cond = sw.code.split("\\(")(1).split("\\)")(0).trim
+        val cases = sw.astChildren.flatMap(_.astChildren)
+            .filter(n => n.code.startsWith("case") || n.code.startsWith("default"))
+            .toSeq.map(n => if (n.code.startsWith("case")) 
+                n.code.split(":")(0).replace("case","").trim else "default")
+        println(cond + "->" + cases.mkString(","))
+    }"""
     torch_switch = joern.send_command(query_forhalf + query_backhalf)
     switch_guards = parse_joern_multiline(torch_switch)
-
-    joern.send_command(f"exit")   # 退出 Joern
-
-    # -------- 4. 合并结果 --------
-    cpp_guards.extend(cheack_gtards)
-    cpp_guards.extend(contorl_gtards)  
     cpp_guards.extend(switch_guards)
+
+    # 6️⃣ 清理与去重 + 逻辑标准化
+    def normalize_negation(expr: str) -> str:
+        """将 !(x >= 0) → not (x >= 0)，并去除双重否定"""
+        expr = expr.strip()
+        expr = re.sub(r'!\s*\(', 'not (', expr)
+        expr = re.sub(r'not\s*\(\s*not\s*\((.*?)\)\s*\)', r'\1', expr)
+        expr = re.sub(r'\s+', ' ', expr.strip())
+        return expr
+
+    cpp_guards = [normalize_negation(g) for g in cpp_guards if g.strip()]
+    cpp_guards = list({g.strip() for g in cpp_guards if g.strip()})
+
+
+    joern.send_command("exit")
+    print(f"[CPP GUARDS] Extracted {len(cpp_guards)} guards from {cpp_func_name}")
     return cpp_guards
 
 def torch_extract_python_guards(api_name: str) -> list:
     """
-    抽取 Python 层 guards
+    抽取 Python 层 guards（正/反路径均提取）
     返回:
         python_guards: list[str]
     """
@@ -277,19 +345,33 @@ def torch_extract_python_guards(api_name: str) -> list:
     try:
         src = inspect.getsource(py_obj)
         tree = ast.parse(src)
-    except (OSError, TypeError):
-        return python_guards  # 一些 builtin 或 C++ API 没有源码
-    except Exception:
+    except (OSError, TypeError, SyntaxError):
         return python_guards
 
-    # -------- 3. 遍历 AST 提取条件 --------
+    # -------- 3. 遍历 AST 提取条件（增强版）--------
     class GuardVisitor(ast.NodeVisitor):
         def visit_If(self, node):
             try:
                 cond = ast.unparse(node.test)
             except Exception:
                 cond = "<complex_expr>"
-            python_guards.append(cond)
+
+            # 判断是否含 raise
+            has_raise = any(isinstance(n, ast.Raise) for n in node.body)
+            has_else_raise = any(isinstance(n, ast.Raise) for n in node.orelse)
+
+            if has_raise:
+                # if cond: raise -> feasible path 是 not(cond)
+                python_guards.append(f"not ({cond})")
+            elif has_else_raise:
+                # else: raise -> feasible path 是 cond
+                python_guards.append(cond)
+            else:
+                # 一般分支 -> 保留 cond 和 not(cond)
+                python_guards.append(cond)
+                python_guards.append(f"not ({cond})")
+
+            # 继续递归遍历
             self.generic_visit(node)
 
         def visit_Assert(self, node):
@@ -297,6 +379,7 @@ def torch_extract_python_guards(api_name: str) -> list:
                 cond = ast.unparse(node.test)
             except Exception:
                 cond = "<complex_expr>"
+            # assert cond -> feasible path 是 cond
             python_guards.append(cond)
             self.generic_visit(node)
 
@@ -312,28 +395,26 @@ def torch_extract_python_guards(api_name: str) -> list:
 
     GuardVisitor().visit(tree)
 
+    # 去重与清理
+    python_guards = list({g.strip() for g in python_guards if g.strip()})
     return python_guards
 
 def torch_extract_function_guards(api_name: str):
     """
-    抽取 function 类型 API 的 guards
-    
-    返回字典:
-        {
-            "python_guards": [条件表达式列表],
-            "cpp_guards": [条件表达式列表或文件定位信息]
-        }
-    
-    参数:
-        api_name: API 名称，例如 'torch.nn.functional.conv1d'
+    抽取 function 类型 API 的 guards。
+    包含 Python 层 + C++ 层。
     """
-    
-    # -------- Python 层抽取 --------
     python_guards = torch_extract_python_guards(api_name)
 
-    # -------- C++ 层 --------
+    cpp_guards = []
     fun_cpp_name = torch_find_cpp_name(api_name)
-    cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+    if fun_cpp_name:
+        try:
+            cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+        except Exception as e:
+            print(f"[WARN] Failed to extract C++ guards for {api_name}: {e}")
+    else:
+        print(f"[WARN] No C++ mapping found for function API: {api_name}")
 
     return {
         "python_guards": python_guards,
@@ -342,19 +423,31 @@ def torch_extract_function_guards(api_name: str):
 
 def torch_extract_builtin_guards(api_name: str):
     """
-    抽取 builtin 函数的 guards（Python 层不可用，全部在 C++）
-    
-    返回字典:
-        {
-            "python_guards": [],  # builtin 没有 Python 层 guard
-            "cpp_guards": [条件列表]
-        }
+    抽取 builtin 类型 API 的 guards。
+    优化：同时尝试 Python 层提取（若失败或为空则忽略），
+    并始终提取 C++ 层 TORCH_CHECK / 控制语句。
     """
-    python_guards = torch_extract_python_guards(api_name)  # Python 层为空
-    fun_cpp_name = torch_find_cpp_name(api_name)
-    #print("fun_cpp_name:", fun_cpp_name)
-    cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
-    
+    python_guards = []
+    cpp_guards = []
+
+    # 🧩 尝试 Python 层提取（某些 builtin 实际有包装）
+    try:
+        python_guards = torch_extract_python_guards(api_name)
+    except Exception as e:
+        print(f"[WARN] Python guard extraction failed for builtin {api_name}: {e}")
+        python_guards = []
+
+    # 🧩 提取 C++ 层
+    try:
+        fun_cpp_name = torch_find_cpp_name(api_name)
+        if fun_cpp_name:
+            cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+        else:
+            print(f"[WARN] No C++ mapping found for builtin API: {api_name}")
+    except Exception as e:
+        print(f"[WARN] C++ guard extraction failed for builtin {api_name}: {e}")
+        cpp_guards = []
+
     return {
         "python_guards": python_guards,
         "cpp_guards": cpp_guards
@@ -362,19 +455,20 @@ def torch_extract_builtin_guards(api_name: str):
 
 def torch_extract_factory_guards(api_name: str):
     """
-    抽取 factory 类型 API 的 guards（Python 层 + C++ 层）
-    
-    返回字典:
-        {
-            "python_guards": [条件列表],  # 如果 Python 层有检查
-            "cpp_guards": [条件列表]
-        }
+    抽取 factory 类型 API 的 guards（如 torch.zeros / torch.arange）。
+    一般无复杂 Python 逻辑，但可能有参数检查。
     """
-    # -------- Python 层抽取 --------
     python_guards = torch_extract_python_guards(api_name)
-    # -------- C++ 层抽取 --------
+
+    cpp_guards = []
     fun_cpp_name = torch_find_cpp_name(api_name)
-    cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+    if fun_cpp_name:
+        try:
+            cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+        except Exception as e:
+            print(f"[WARN] Failed to extract C++ guards for factory {api_name}: {e}")
+    else:
+        print(f"[WARN] No C++ mapping found for factory API: {api_name}")
 
     return {
         "python_guards": python_guards,
@@ -517,72 +611,166 @@ def torch_extract_class_guards(api_name: str):
 
     return {"python_guards": python_guards, "cpp_guards": cpp_guards}
 
+def torch_extract_unknown_guards(api_name: str):
+    """
+    对 unknown 类型也尽力而为：
+    - 先尝试 Python 层 guard 提取（失败忽略）；
+    - 再尝试通过 YAML 映射到 C++ 实现并提取 C++ guards（失败忽略）。
+    """
+    python_guards = []
+    cpp_guards = []
+
+
+    # Python 层（尽力而为）
+    try:
+        python_guards = torch_extract_python_guards(api_name) or []
+    except Exception as e:
+        print(f"[WARN] Python guard extraction failed for unknown {api_name}: {e}")
+        python_guards = []
+
+
+    # C++ 层（尝试找到对应实现）
+    try:
+        fun_cpp_name = torch_find_cpp_name(api_name)
+        if fun_cpp_name:
+            try:
+                cpp_guards = torch_extract_cpp_guards(fun_cpp_name) or []
+            except Exception as e:
+                print(f"[WARN] C++ guard extraction failed for unknown {api_name}: {e}")
+        else:
+            print(f"[WARN] No C++ mapping found for unknown API: {api_name}")
+    except Exception as e:
+        print(f"[WARN] torch_find_cpp_name failed for unknown {api_name}: {e}")
+
+    return {"python_guards": python_guards, "cpp_guards": cpp_guards}
+
+
+def torch_extract_guards(api_name: str):
+    """
+    统一调度函数，根据 API 类型自动调用对应的 guard 提取逻辑。
+    对 unknown 类型：尝试 Python + C++ 双路径提取，失败则忽略。
+    """
+    api_type = torch_api_classify(api_name)
+    print(f"[INFO] Extracting guards for {api_name} (type: {api_type})")
+
+
+    if api_type == "function":
+        return torch_extract_function_guards(api_name)
+    elif api_type == "builtin":
+        return torch_extract_builtin_guards(api_name)
+    elif api_type == "factory":
+        return torch_extract_factory_guards(api_name)
+    elif api_type == "class":
+        return torch_extract_class_guards(api_name)
+    else:
+    # unknown → 也尝试两层提取
+        return torch_extract_unknown_guards(api_name)
+
 # print(torch_extract_cpp_guards("conv1d_symint"))
 # print(torch_api_classify("torch.nn.functional.embedding"))
 
 
 
 # =====================================================
-# 规范化
+# Guard 规范化阶段
 # =====================================================
-# ========== 一、参数过滤 ==========
+
 def filter_guards_by_args(guards: list[str], api_name: str, keep_self: bool = False) -> list[str]:
     """
-    仅保留与 API 参数相关的 guard。
+    改进版（更宽松匹配逻辑）：
+      - 仅要 guard 中含有任意参数名（如 input, bias）即保留；
+      - 同时保留 dtype/device/scalar_type/isComplexType 等关键检查；
+      - 不使用复杂正则，直接字符串包含判断；
+      - 允许参数名出现在任意位置（例如 input_, self.input, at::isComplexType(input.scalar_type())）。
     """
-    arg_names = set(get_all_parameters(api_name) or [])
+    try:
+        arg_names = list(get_all_parameters(api_name) or [])
+    except Exception:
+        arg_names = []
+
     if not keep_self and "self" in arg_names:
-        arg_names.discard("self")
+        arg_names.remove("self")
 
     if not arg_names:
-        return guards
+        return guards  # 若无法识别参数，直接保留所有
 
-    arg_patterns = [re.compile(rf"\b{re.escape(arg)}\b") for arg in arg_names]
+    filtered = []
+    for g in guards:
+        if not isinstance(g, str) or not g.strip():
+            continue
 
-    def mentions_any_arg(expr: str) -> bool:
-        if not isinstance(expr, str) or not expr.strip():
-            return False
-        s = re.sub(r"\s+", " ", expr).strip()
-        return any(p.search(s) for p in arg_patterns)
+        # 宽松匹配：guard 中包含任意参数名即可
+        keep = any(arg in g for arg in arg_names)
 
-    return [g for g in guards if mentions_any_arg(g)]
+        # 保留 dtype/device/scalar_type/isComplexType 等关键类型检查
+        if not keep and any(k in g for k in ["dtype", "device", "scalar_type", "isComplexType", "shape"]):
+            keep = True
 
-# ========== 二、表达式清理 ==========
+        if keep:
+            filtered.append(g)
+
+    # 去重保序
+    return list(dict.fromkeys(filtered))
+
 def clean_expr(expr: str) -> str:
-    """去除多余空格和括号"""
-    expr = re.sub(r"\s+", " ", expr.strip())
-    # 去掉最外层匹配括号
+    """
+    清理表达式：
+    - 去除多余空格和括号
+    - 标准化逻辑符号（and→&&, or→||）
+    - 展平多层 not()
+    """
+    if not isinstance(expr, str):
+        return expr
+
+    expr = expr.strip()
+    expr = re.sub(r"\s+", " ", expr)
+    expr = expr.replace(" and ", " && ").replace(" or ", " || ")
+
+    # 去掉多余括号
     while expr.startswith("(") and expr.endswith(")") and expr.count("(") == expr.count(")"):
         expr = expr[1:-1].strip()
-    return expr
 
-# ========== 三、类型推断 ==========
+    # 展平 not(not(x))
+    expr = re.sub(r"not\s*\(\s*not\s*\((.*?)\)\s*\)", r"\1", expr)
+
+    return expr
 
 def infer_guard_type(expr: str) -> str:
     """
-    根据 guard 内容推断其逻辑类型。
+    根据 guard 内容推断逻辑类型。
     """
+    if not expr:
+        return "unknown"
     if "dtype" in expr:
         return "dtype_check"
-    elif "device" in expr:
+    if "device" in expr:
         return "device_check"
-    elif "shape" in expr or "size" in expr:
+    if any(k in expr for k in ["shape", "size", "ndim", "dim"]):
         return "shape_check"
-    elif "None" in expr:
+    if "None" in expr:
         return "existence_check"
-    elif re.search(r"(>|<|>=|<=|==|!=)", expr):
-        return "range_check"
-    elif re.search(r"in |not in ", expr):
+    if re.search(r">|<|>=|<=|==|!=", expr):
+        return "value_check"
+    if re.search(r"in |not in ", expr):
         return "membership_check"
-    else:
-        return "boolean"
-    
-# ========== 四、guard结构化 ==========
+    if "not" in expr or "&&" in expr or "||" in expr:
+        return "logical_check"
+    return "boolean"
+
 def normalize_guard(expr: str, src: str) -> dict:
     """
     将 guard 标准化为结构化形式。
+    新增：检测反路径（not expr），拆分 lhs/rhs。
     """
     expr = clean_expr(expr)
+    negated = False
+
+    # 检测反路径
+    if expr.startswith("not (") and expr.endswith(")"):
+        negated = True
+        expr = expr[4:-1].strip()
+
+    # 拆分 lhs, op, rhs
     pattern = re.compile(r"(==|!=|>=|<=|>|<| in | not in | is | is not)")
     m = pattern.search(expr)
     if m:
@@ -591,45 +779,51 @@ def normalize_guard(expr: str, src: str) -> dict:
         rhs = expr[m.end():].strip()
     else:
         lhs, rhs, op = expr, "", ""
+
     return {
         "lhs": lhs,
         "op": op,
         "rhs": rhs,
         "expr": expr,
+        "negated": negated,
         "type": infer_guard_type(expr),
         "src": src
     }
 
-# ========== 五、规范化主函数 ==========
 def normalize_guards_stage(raw_guards: dict, api_name: str) -> dict:
     """
     规范化 Python + C++ guards，生成路径枚举友好格式。
+    改进：增加反路径识别、统一清理、类型推断。
     """
     result = {"python": [], "cpp": []}
 
     for src in ["python", "cpp"]:
         guards = raw_guards.get(f"{src}_guards", [])
-        guards = list({g.strip() for g in guards if g.strip()})  # 去重
+        if not guards:
+            continue
+
+        # 去重、过滤与参数无关的 guard
+        guards = list({clean_expr(g) for g in guards if g.strip()})
         guards = filter_guards_by_args(guards, api_name)
 
         normalized = [normalize_guard(g, src) for g in guards]
-        result[src] = normalized
+        result[src].extend(normalized)
 
-    # 合并为路径枚举友好格式（含来源）
+    # 合并为路径枚举格式
     for_path_enum = []
     for src, guards in result.items():
         for g in guards:
             for_path_enum.append({
                 "expr": g["expr"],
                 "src": src,
-                "type": g["type"]
+                "type": g["type"],
+                "negated": g["negated"]
             })
 
     return {
         "normalized_guards": result,
         "for_path_enumeration": for_path_enum
     }
-
 
 # =====================================================
 # 批量提取并规范化 guards
@@ -638,22 +832,24 @@ def normalize_guards_stage(raw_guards: dict, api_name: str) -> dict:
 def generate_normalized_guards(api_names: list[str], output_path: str):
     """
     批量提取并规范化 guards。
-    每处理完一个 API 就立即写入输出 JSON 文件（防止内存过大 / 崩溃丢失）。
+    基础版：
+    - 支持 unknown 类型（不跳过）
+    - 捕获最小异常防止中断
+    - 立即写入文件避免进度丢失
     """
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # 如果文件已存在，则加载旧数据，否则初始化空字典
+    # 若存在旧结果则加载
     if output_file.exists():
-        with open(output_file, "r", encoding="utf-8") as f:
-            try:
+        try:
+            with open(output_file, "r", encoding="utf-8") as f:
                 all_results = json.load(f)
-            except json.JSONDecodeError:
-                all_results = {}
+        except Exception:
+            all_results = {}
     else:
         all_results = {}
 
-    # 遍历 API
     for api in api_names:
         if api in all_results:
             print(f"⏩ Skipping already processed API: {api}")
@@ -662,41 +858,25 @@ def generate_normalized_guards(api_names: list[str], output_path: str):
         print(f"\n[+] Processing API: {api}")
 
         try:
-            # 1️⃣ 分类
-            api_type = torch_api_classify(api)
-            print(f"    ↳ Type: {api_type}")
+            # 分类并抽取 guards（包含 unknown 尝试）
+            raw_guards = torch_extract_guards(api)
 
-            # 2️⃣ 抽取 guards
-            if api_type == "function":
-                raw_guards = torch_extract_function_guards(api)
-            elif api_type == "class":
-                raw_guards = torch_extract_class_guards(api)
-            elif api_type == "builtin":
-                raw_guards = torch_extract_builtin_guards(api)
-            elif api_type == "factory":
-                raw_guards = torch_extract_factory_guards(api)
-            else:
-                print(f"     Unknown type ({api_type}), skipping.")
-                continue
-
-            # 3️⃣ 规范化
+            # 规范化
             normalized = normalize_guards_stage(raw_guards, api)
 
-            # 4️⃣ 写入内存结构
+            # 保存结果
             all_results[api] = {
-                "type": api_type,
                 "normalized_guards": normalized["normalized_guards"],
                 "for_path_enumeration": normalized["for_path_enumeration"]
             }
 
-            # 5️⃣ 立刻保存到文件（覆盖写入）
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(all_results, f, indent=2, ensure_ascii=False)
 
-            print(f"     Saved progress for {api}")
+            print(f"    ✅ Saved normalized guards for {api}")
 
         except Exception as e:
-            print(f"     Error processing {api}: {e}")
+            print(f"    ❌ Error processing {api}: {e}")
             continue
 
     print(f"\n✅ All APIs processed and saved to: {output_file}")
@@ -706,131 +886,585 @@ def generate_normalized_guards(api_names: list[str], output_path: str):
 # 路径枚举
 # =====================================================
 
-# Step 1️⃣ Python 层路径枚举
-def enumerate_python_paths(api_name: str, api_data: dict):
+# Python 层路径枚举核心
+def enumerate_python_paths_core(api_name: str, api_data: dict):
     """
-    根据 Python 层 guards 生成路径条件
-    每个 guard 默认包含 True/False 分支
-    """
-    guards_py = api_data.get("for_path_enumeration", [])
-    calls_cpp = api_data.get("calls_cpp", False)
+    改进版 Python 层路径枚举（融合 normalized_guards 的控制流 DFS）。
 
-    if not guards_py:
+    修复版特点：
+    - 每遇到 if / assert 时，分支执行后会继续执行后续语句（非立即 return）。
+    - 每个路径完整覆盖从入口到 return / raise 的语句序列。
+    - 保持与 normalized_guards 对齐。
+    """
+    normalized_guards = api_data.get("normalized_guards", {}).get("python", [])
+
+    try:
+        mod_name, attr_name = api_name.rsplit('.', 1)
+        mod = __import__(mod_name, fromlist=[attr_name])
+        py_obj = getattr(mod, attr_name)
+        src = inspect.getsource(py_obj)
+        tree = ast.parse(src)
+    except Exception as e:
+        print(f"[WARN] enumerate_python_paths: cannot load source for {api_name}: {e}")
         return []
 
-    expanded = []
-    for g in guards_py:
-        expr = g[0] if isinstance(g, list) else g
-        expanded.append([expr, f"not ({expr})"])
-
-    path_conditions = []
-    for combo in itertools.product(*expanded):
-        cond = " and ".join(combo)
-        path_conditions.append({
-            "id": f"{api_name}_P{len(path_conditions)+1}",
-            "expr": cond,
-            "calls_cpp": calls_cpp,
-            "src": "python"
-        })
-
-    return path_conditions
-
-
-# Step 2️⃣ C++ 层路径提取
-def enumerate_cpp_paths(api_name: str, api_data: dict):
-    """
-    生成 C++ 层路径条件（guards 已经由前一阶段提取）
-    """
-    guards_cpp = api_data.get("cpp_guards", [])
-    if not guards_cpp:
+    func_node = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            func_node = node
+            break
+    if func_node is None:
         return []
 
-    cpp_paths = []
-    for idx, cond in enumerate(guards_cpp, 1):
-        cpp_paths.append({
-            "id": f"{api_name}_C{idx}",
-            "expr": cond,
-            "src": "cpp"
-        })
-    return cpp_paths
+    def match_guard(expr: str, guards: list[dict]) -> str:
+        for g in guards:
+            if g.get("expr") == expr:
+                return g["expr"]
+        for g in guards:
+            lhs = g.get("lhs", "")
+            if lhs and lhs in expr:
+                return g["expr"]
+        return expr
 
-
-# Step 3️⃣ 路径合并与参数空间生成
-
-def combine_paths(api_name: str, py_paths: list, cpp_paths: list):
-    """
-    将 Python 路径与 C++ 路径组合成参数空间
-    """
-    result = []
-    for py_p in py_paths:
-        if py_p["calls_cpp"] and cpp_paths:
-            # 若路径触发 C++ 调用，则做笛卡尔积
-            for cpp_p in cpp_paths:
-                combined_cond = f"({py_p['expr']}) and ({cpp_p['expr']})"
-                result.append({
-                    "id": f"{py_p['id']}_C{cpp_p['id']}",
-                    "expr": combined_cond,
-                    "src": "py+cpp"
-                })
-        else:
-            # 否则仅保留 Python 路径
-            result.append(py_p)
-    return result
-
-# 整体入口
-
-def generate_parameter_spaces(normalized_path: str, output_path: str):
-    """
-    读取已规范化 guards 文件，生成参数空间（路径枚举结果）
-    """
-    normalized_path = Path(normalized_path)
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(normalized_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    all_results = {}
-
-    for api_name, api_data in data.items():
-        print(f"[+] Enumerating parameter spaces for {api_name}")
+    def unparse_cond(test_node: ast.AST) -> str:
         try:
-            # Step 1️⃣ Python
-            py_paths = enumerate_python_paths(api_name, api_data)
+            return ast.unparse(test_node)
+        except Exception:
+            return "<complex_expr>"
 
-            # Step 2️⃣ C++
-            cpp_paths = enumerate_cpp_paths(api_name, api_data)
+    paths = []
 
-            # Step 3️⃣ 合并
-            combined = combine_paths(api_name, py_paths, cpp_paths)
+    def append_path(guards: list[str], path_type: str, ret_value: ast.AST | None):
+        calls_cpp = False
+        if path_type == "return_fun" and isinstance(ret_value, ast.Call):
+            calls_cpp = True
+        path_id = f"{api_name}_P{len(paths)+1}"
+        paths.append({
+            "id": path_id,
+            "conjuncts": guards[:],
+            "expr": " and ".join(guards) if guards else "",
+            "src": ["python"],
+            "path_type": path_type,
+            "calls_cpp": calls_cpp,
+            "complexity": len(guards),
+            "sat": True
+        })
 
-            all_results[api_name] = {
-                "spaces": combined,
-                "summary": {
-                    "python_paths": len(py_paths),
-                    "cpp_paths": len(cpp_paths),
-                    "total_combined": len(combined)
-                }
-            }
-        except Exception as e:
-            print(f"  ❌ Error processing {api_name}: {e}")
+    def exec_block(stmts: list[ast.stmt], guards_prefix: list[str]):
+        guards = guards_prefix[:]
+        i = 0
+        n = len(stmts)
+        while i < n:
+            stmt = stmts[i]
 
-    # 保存结果
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(all_results, f, indent=2, ensure_ascii=False)
+            # If 分支（新增：继续执行剩余语句）
+            if isinstance(stmt, ast.If):
+                cond_raw = unparse_cond(stmt.test)
+                cond_aligned = match_guard(cond_raw, normalized_guards)
+                rest = stmts[i+1:]
+                exec_block(list(stmt.body) + rest, guards + [cond_aligned])
+                exec_block(list(stmt.orelse or []) + rest, guards + [f"not ({cond_aligned})"])
+                return
 
-    print(f"\n✅ 路径枚举阶段完成，结果已保存到：{output_path}")
+            # Assert 分支（成功继续执行后续语句）
+            if isinstance(stmt, ast.Assert):
+                cond_raw = unparse_cond(stmt.test)
+                cond_aligned = match_guard(cond_raw, normalized_guards)
+                rest = stmts[i+1:]
+                append_path(guards + [f"not ({cond_aligned})"], "raise", None)
+                exec_block(rest, guards + [cond_aligned])
+                return
+
+            # Raise 终止路径
+            if isinstance(stmt, ast.Raise):
+                append_path(guards, "raise", None)
+                return
+
+            # Return 终止路径
+            if isinstance(stmt, ast.Return):
+                if isinstance(stmt.value, ast.Call):
+                    append_path(guards, "return_fun", stmt.value)
+                else:
+                    append_path(guards, "return", stmt.value)
+                return
+
+            i += 1
+
+        append_path(guards, "return", None)
+
+    exec_block(func_node.body, [])
+    return paths
+# python层路径枚举函数
+def torch_enumerate_python_paths(json_path: str, api_name: str):
+    """
+    测试 enumerate_python_paths，输出更清晰的路径结构。
+    """
+    with open(json_path, "r", encoding="utf-8") as f:
+        all_results = json.load(f)
+
+    if api_name not in all_results:
+        print(f"[ERROR] API '{api_name}' not found in {json_path}")
+        return
+
+    api_data = all_results[api_name]
+    paths = enumerate_python_paths_core(api_name, api_data)
 
 
-# ========================
-# Example Run
-# ========================
-if __name__ == "__main__":
-    generate_parameter_spaces(
-        normalized_path="output/all_api_guards.json",
-        output_path="output/all_api_paths.json"
+# 利用 Joern + CPG 做 C++ 层路径枚举
+def _joern_list_switches_with_order(joern: JoernShell, cpp_func_name: str):
+    """
+    从 Joern 中提取 C++ 函数内所有 switch(cond) 的条件与 case/default。
+    返回:
+      [
+        {"order": <行号>, "cond": "x", "cases": ["1", "2", "default"]},
+        {"order": <行号>, "cond": "y", "cases": ["10", "20", "default"]}
+      ]
+    """
+    query_forhalf = f'cpg.method.name("{cpp_func_name}")'
+    query_backhalf = r""".ast.isControlStructure.filter(_.code.startsWith("switch")).foreach { sw => 
+        val ord = sw.lineNumber.getOrElse(-1)
+        val cond = sw.code.split("\\(")(1).split("\\)")(0).trim
+        val cases = sw.astChildren.flatMap(_.astChildren)
+            .filter(n => n.code.startsWith("case") || n.code.startsWith("default"))
+            .toSeq.map(n => if (n.code.startsWith("case"))
+                n.code.split(":")(0).replace("case","").trim else "default")
+        println(cond + "->" + cases.mkString(",") + "@" + ord)
+    }"""
+    
+    raw = joern.send_command(query_forhalf + query_backhalf)
+
+    # 匹配形如:  "x->1,2,default@32"
+    pattern = re.compile(r"([a-zA-Z0-9_]+)\s*->\s*([a-zA-Z0-9_, ]+)\s*@(\d+)")
+    results = []
+    for line in raw.splitlines():
+        m = pattern.search(line)
+        if m:
+            cond = m.group(1).strip()
+            cases = [c.strip() for c in m.group(2).split(",") if c.strip()]
+            order = int(m.group(3))
+            results.append({
+                "order": order,
+                "cond": cond,
+                "cases": cases
+            })
+
+    results.sort(key=lambda x: x["order"])
+
+    print(f"[SWITCH DEBUG] {cpp_func_name}: 提取到 {len(results)} 个 switch 结构")
+    for sw in results:
+        print(f"  ↳ line {sw['order']}: switch({sw['cond']}) -> cases {sw['cases']}")
+    return results
+
+def _parse_control_structures(ctrl_raw: str):
+    """从 Joern 输出中提取控制结构节点，标准化类型与条件。"""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    clean = ansi_escape.sub('', ctrl_raw)
+    clean = re.sub(r'joern>.*', '', clean)
+    clean = re.sub(r'val res\d+:\s*List\[.*?\]\s*=\s*List\(', 'List(', clean)
+
+    def _std_type(t: str) -> str:
+        return re.sub(r'[^A-Z_]', '', t.upper())
+
+    def _first_paren_chunk(s: str) -> str:
+        """取第一个 () 内的内容；若失败，返回原串。"""
+        m = re.search(r'\((.*)\)', s, flags=re.DOTALL)
+        return (m.group(1).strip() if m else s.strip())
+
+    def _first_arg_of_call(arglist: str) -> str:
+        """获取调用形参串的首个参数（处理简单括号计数）。"""
+        depth = 0
+        buf = []
+        for ch in arglist:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            elif ch == ',' and depth == 0:
+                break
+            buf.append(ch)
+        return ''.join(buf).strip()
+
+    nodes = []
+    current = {}
+
+    for raw_line in clean.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if line.startswith("ControlStructure("):
+            current = {}
+            continue
+
+        if line.startswith("code ="):
+            code = line.split("=", 1)[1].strip().rstrip(',').strip()
+            current["code"] = code.strip('"')
+            continue
+
+        if "controlStructureType" in line:
+            t = line.split("=", 1)[1].strip().rstrip(',').strip().strip('"')
+            current["type"] = _std_type(t)
+            continue
+
+        if line.startswith("lineNumber"):
+            try:
+                current["order"] = int(re.search(r'\d+', line).group(0))
+            except Exception:
+                current["order"] = 10**9  # fallback
+            continue
+
+        if line.startswith("parserTypeName"):
+            if not current:
+                continue
+            code = current.get("code", "")
+            ctype = _std_type(current.get("type", "UNKNOWN"))
+            order = current.get("order", 10**9)
+
+            # 忽略无意义/顺序控制节点：ELSE/THROW/BREAK
+            if ctype in {"ELSE", "THROW", "BREAK"}:
+                current = {}
+                continue
+
+            # 解析条件
+            cond = ""
+            if "TORCH_CHECK" in code:
+                inside = _first_paren_chunk(code)
+                cond = _first_arg_of_call(inside)
+                ctype = "IF_THROW"
+            elif ctype == "FOR":
+                header = _first_paren_chunk(code)  # init; cond; inc
+                parts = [p.strip() for p in header.split(';')]
+                cond = (parts[1] if len(parts) >= 2 else header) or header
+            elif ctype in {"IF", "WHILE", "SWITCH"}:
+                cond = _first_paren_chunk(code)
+            else:
+                # 其他未知结构，尽量保留 code 作为条件
+                cond = code.strip()
+
+            nodes.append({"order": order, "type": ctype, "cond": cond})
+            current = {}
+
+    nodes.sort(key=lambda x: x["order"])
+    return nodes
+
+# 除了 controlStructure，还需要显式提取 TORCH_CHECK 调用
+def _append_torch_checks(joern, cpp_func_name, nodes):
+    torch_check_query = (
+        f'cpg.method.name("{cpp_func_name}").call.name("TORCH_CHECK").argument(1).code.l'
     )
+    raw = joern.send_command(torch_check_query)
+    conds = parse_scala_list(raw)
+    order = 0
+    for cond in conds:
+        order += 1
+        nodes.append({
+            "order": 5 + order,  # 伪造一个较小 order 以保证排序在前
+            "type": "IF_THROW",
+            "cond": cond.strip()
+        })
+    return nodes
 
+def build_cpp_paths(nodes, switches):
+    """
+    根据控制结构节点 + switch cases 构建所有执行路径。
+    返回：每条路径是字符串列表，最后一项为 '→ return' 或 '→ raise'
+    """
+    # 把 switch 的真实 cases 建成索引：order -> cases
+    case_map = {}
+    for sw in switches or []:
+        if sw.get("cases"):
+            case_map[sw["order"]] = sw["cases"]
+
+    active = [[]]     # 仍在继续扩展的路径（未结束）
+    finished = []     # 已终止的路径（含 ->raise 或 ->return）
+
+    for node in nodes:
+        ntype, cond, order = node["type"], node["cond"], node["order"]
+
+        next_active = []
+
+        for path in active:
+            # 若这条路径已经提前终止（理论上 active 里不该出现，但稳妥起见再拦一下）
+            if path and path[-1] in ("→ raise", "→ return"):
+                finished.append(path)
+                continue
+
+            if ntype == "IF_THROW":
+                # True 分支：条件成立，继续执行
+                next_active.append(path + [cond])
+                # False 分支：条件不成立，立即异常终止
+                finished.append(path + [f"not ({cond})", "→ raise"])
+
+            elif ntype in {"IF", "FOR", "WHILE"}:
+                # 两条分支都继续后续节点
+                next_active.append(path + [cond])
+                next_active.append(path + [f"not ({cond})"])
+
+            elif ntype == "SWITCH":
+                cases = case_map.get(order, ["default"])
+                for c in cases:
+                    next_active.append(path + [f"{cond} == {c}"])
+
+            else:
+                # 其他/顺序节点（很少见）：直接累加
+                next_active.append(path + [cond])
+
+        # 本轮结束后，更新 active
+        active = next_active
+
+    # 所有节点处理完毕：把仍未终止的 active 补上隐式 return
+    for p in active:
+        if not p or p[-1] not in ("→ raise", "→ return"):
+            finished.append(p + ["→ return"])
+        else:
+            finished.append(p)
+
+    return finished
+
+def torch_enumerate_cpp_paths(api_name: str, joern_bat_path: str, joern_project_path: str):
+    """
+    保持原接口 & 输出格式不变：打印每条路径并返回 paths(List[List[str]])。
+    """
+    # 你的测试固定入口
+    cpp_func_name = torch_find_cpp_name(api_name)
+    if not cpp_func_name:
+        #print(f"[WARN] 无法找到 {api_name} 的 C++ 实现函数")
+        return []
+
+    # print(f"=== 提取 C++ 路径（Joern DFS）: {api_name} → {cpp_func_name} ===")
+
+    joern = JoernShell(joern_bat_path)
+    joern.send_command(f'open("{joern_project_path}")')
+
+    # 控制结构
+    ctrl_raw = joern.send_command(f'cpg.method.name("{cpp_func_name}").controlStructure.l')
+    nodes = _parse_control_structures(ctrl_raw)
+    nodes = _append_torch_checks(joern, cpp_func_name, nodes)
+    nodes.sort(key=lambda x: x["order"])
+    # 真实 switch cases
+    switches = _joern_list_switches_with_order(joern, cpp_func_name)
+    # print(switches)
+    joern.send_command("exit")
+
+    paths = build_cpp_paths(nodes, switches)
+
+    return paths
+
+# 合并两层路径枚举结果
+def merge_python_cpp_paths(py_paths: list, cpp_paths: list, api_name: str):
+    """
+    将 Python 层与 C++ 层路径合并成完整执行路径空间。
+    - Python 层中 path_type == "return_fun" 的路径会与所有 C++ 层路径组合；
+    - 其他 Python 路径保持原状；
+    - C++ 层路径结构为 [['x>=0', 'not(y>=0)', '→ return'], ...]。
+    """
+    merged = []
+    path_id = 1
+    if py_paths:
+        for py_p in py_paths:
+            ptype = py_p.get("path_type", "")
+            py_src = py_p.get("src", ["py:unknown"])
+            py_conds = py_p.get("conjuncts", [])
+
+            if ptype == "return_fun":
+                # 与 C++ 层路径做笛卡尔积
+                for cpp in cpp_paths:
+                    cpp_conds = [c for c in cpp if not c.startswith("→")]
+                    cpp_exit = "return" if any("→ return" in c for c in cpp) else "raise"
+                    merged.append({
+                        "id": f"{api_name}_S{path_id}",
+                        "conjuncts": py_conds + cpp_conds,
+                        "src": py_src + ["cpp:testGuards"],
+                        "path_type": cpp_exit,
+                        "complexity": len(py_conds) + len(cpp_conds)
+                    })
+                    path_id += 1
+            else:
+                # 直接保留 Python 路径
+                merged.append({
+                    "id": f"{api_name}_S{path_id}",
+                    "conjuncts": py_conds,
+                    "src": py_src,
+                    "path_type": ptype,
+                    "complexity": len(py_conds)
+                })
+                path_id += 1
+    else:
+        # 仅 C++ 层路径
+        if cpp_paths is None:
+            return merged
+        for cpp in cpp_paths:
+            cpp_conds = [c for c in cpp if not c.startswith("→")]
+            cpp_exit = "return" if any("→ return" in c for c in cpp) else "raise"
+            merged.append({
+                "id": f"{api_name}_S{path_id}",
+                "conjuncts": cpp_conds,
+                "src": ["cpp:testGuards"],
+                "path_type": cpp_exit,
+                "complexity": len(cpp_conds)
+            })
+            path_id += 1
+    print(f"[MERGE DONE] {api_name}: 合并后共 {len(merged)} 条完整路径。")
+    for p in merged:
+        emoji = "✅" if p["path_type"] == "return" else "⚠️" if p["path_type"] == "raise" else "🔁"
+        print(f"[{p['id']}] {emoji} {p['path_type'].upper()} ({len(p['conjuncts'])} guards)")
+        for i, g in enumerate(p["conjuncts"], 1):
+            print(f"  {i}. {g}")
+        print("=" * 60)
+
+    return merged
+
+
+# =====================================================
+# 获取源码
+# =====================================================
+def torch_extract_api_source(api_name: str):
+    """
+    提取给定 PyTorch API 的 Python 源码和对应 C++ 源码。
+    统一保存到一个 JSON 文件，key 为 api_name。
+    """
+    output_path = "torch_api_sources.json"
+    pytorch_root = "C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1"
+
+    # ========== 1️⃣ Python 源码提取 ==========
+    py_file = None
+    py_start, py_end, py_code = None, None, ""
+
+    try:
+        target = eval(api_name)  # 反射函数对象
+        src_file = inspect.getsourcefile(target)
+        src_lines, start_line = inspect.getsourcelines(target)
+        py_file = os.path.relpath(src_file, pytorch_root)
+
+        # 去掉 docstring
+        src_code = "".join(src_lines)
+        # 去掉函数头和缩进
+        body = textwrap.dedent(src_code)
+        # 删除首个三引号字符串 """...""" 或 '''...'''
+        body = re.sub(r'^[ \t]*[ruRU]*[\'"]{3}[\s\S]*?[\'"]{3}\n?', '', body, count=1, flags=re.MULTILINE)
+        # 去掉前导空行
+        body = body.lstrip("\n")
+
+        py_start = start_line
+        py_end = start_line + len(src_lines) - 1
+        py_code = body
+
+        print(f"[PYTHON] {api_name} -> {py_file}:{py_start}-{py_end}")
+    except Exception as e:
+        print(f"[WARN] 无法提取 Python 源码: {api_name}, error={e}")
+
+    # ========== 2️⃣ C++ 源码提取 ==========
+    cpp_func_name = torch_find_cpp_name(api_name)
+    cpp_file, cpp_start, cpp_end, cpp_code = None, None, None, ""
+
+    joern = JoernShell(joern_bat_path)
+    joern.send_command(f'open("{joern_project}")')
+
+    print(f"[CPP] 提取 {cpp_func_name} 的源码")
+
+    query_meta = f'''
+cpg.method.name("{cpp_func_name}").foreach {{
+  m =>
+    val fn  = m.filename
+    val ln1 = m.lineNumber.getOrElse(-1).toString
+    val ln2 = m.lineNumberEnd.getOrElse(-1).toString
+    println("META_BEGIN" + fn + "||" + ln1 + "||" + ln2 + "META_END")
+}}
+'''
+    meta_raw = joern.send_command(query_meta)
+    m = re.search(r'META_BEGIN(.*?)META_END', meta_raw, re.DOTALL)
+    if m:
+        file_rel, start_line_s, end_line_s = m.group(1).split("||")
+        cpp_file = file_rel.strip().replace("\\", "/")
+        cpp_start, cpp_end = int(start_line_s), int(end_line_s)
+        abs_cpp = (Path(pytorch_root) / cpp_file).resolve()
+        if abs_cpp.exists():
+            with open(abs_cpp, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+                cpp_code = "".join(lines[cpp_start-1:cpp_end])
+        else:
+            print(f"[WARN] 找不到 {abs_cpp}，回退为 Joern 输出")
+            code_raw = joern.send_command(f'cpg.method.name("{cpp_func_name}").code.l')
+            ansi = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            cpp_code = "\n".join([
+                l.strip() for l in ansi.sub('', code_raw).splitlines()
+                if l.strip() and not l.startswith("joern>")
+            ])
+    else:
+        print(f"[WARN] Joern 未找到函数 {cpp_func_name} 的源码信息")
+
+    joern.send_command("exit")
+
+    # ========== 3️⃣ 汇总并保存 ==========
+    api_data = {
+        "python": {
+            "file": py_file,
+            "start_line": py_start,
+            "end_line": py_end,
+            "code": py_code
+        },
+        "cpp": {
+            "function": cpp_func_name,
+            "file": cpp_file,
+            "start_line": cpp_start,
+            "end_line": cpp_end,
+            "code": cpp_code
+        }
+    }
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    if os.path.exists(output_path):
+        try:
+            with open(output_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            data = {}
+    else:
+        data = {}
+
+    data[api_name] = api_data
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print(f"[DONE] {api_name} 源码已保存至 {output_path}")
+    return api_data
+
+
+
+
+
+
+if __name__ == "__main__":
+    # 假设你已生成 testGuards 的 CPG
+    # ppaths = torch_enumerate_python_paths("torch_api_guards.json", "torch.nn.functional.conv1d")
+    # cpaths = torch_enumerate_cpp_paths(
+    #     api_name="torch.nn.functional.conv1d",
+    #     joern_bat_path = joern_bat_path,
+    #     joern_project_path = joern_project
+    # )
+    # merged_paths = merge_python_cpp_paths(ppaths, cpaths, "torch.nn.functional.conv1d")
+    # for i in merged_paths:
+    #     print(i)
+    torch_extract_api_source("torch.nn.functional.embedding_bag")
+
+
+    # api_name = torch_find_cpp_name("torch.nn.functional.conv1d")
+    # generate_normalized_guards(["torch.nn.functional.conv1d"], "test_api_guards.json")
+
+
+
+# # 示例调用
+# if __name__ == "__main__":
+#     # 假设路径是 output/all_api_guards.json
+#     json_path = "torch_api_guards.json"
+
+#     # 选择一个你已处理过的 API 名称，比如 torch.nn.functional.conv1d
+#     api_name = "torch.nn.functional.embedding_bag"
+
+#     test_enumerate_python_paths_from_json(json_path, api_name)
+# torch.nn.functional.embedding_bag
+# torch.nn.functional.embedding_bag
 
 
 
@@ -838,7 +1472,7 @@ if __name__ == "__main__":
 # if __name__ == "__main__":
     
 #     # api_names= read_file(f"./documentation/{lib_name}_APIdef.txt")
+#     api_names = ["torch.nn.functional.embedding_bag"]
+#     generate_normalized_guards(api_names, f"{lib_name}_api_guards.json")
 
-#     # generate_normalized_guards(api_names, "normalized_guards.json")
-
-#     print(torch_extract_function_guards("torch.nn.functional.conv1d"))
+    # print(torch_extract_function_guards("torch.nn.functional.conv1d"))
