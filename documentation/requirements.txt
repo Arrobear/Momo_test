@@ -1,4 +1,0 @@
-git+https://github.com/Arrobear/Momo_test.git
-pytorch = 2.5.1+cu121
-tensorflow = 2.20.0
-Joern = 4.0.421
