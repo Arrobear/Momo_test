@@ -144,18 +144,6 @@ def check_condition_filter(api_names):
         function_name = filter_samenames(i, fun_string, api_names)
         i += 1
 
-        # args = get_all_parameters(function_name)
-
-
-        # if fun_string == "tf.keras.optimizers.Ftrl":
-        #     last_result = extract_invalid_parameter_combinations()
-        #     for k in last_result:
-        #         error_combinations.append(k)
-        # else:
-        #     if len(args) > 10:
-        #         large_combination_api.append(function_name)
-        #         add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"[警告] {function_name} 的参数过多，可能导致组合过大，暂时跳过该函数")
-        #         continue
         
         arg_combinations, j = get_all_combinations_from_json(function_name, j)
         api_doc = get_doc(function_name)
@@ -212,4 +200,197 @@ def check_condition_filter(api_names):
 
     # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"以下函数因参数过多，可能导致组合过大，未进行检查：{large_combination_api}")
 
-a = 1
+
+
+#------------------------------------
+# 生成api input
+#------------------------------------
+
+def generate_api_input(api_names):
+
+    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+        api_defs = [line.strip() for line in file]
+    api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+
+    # 加载LLM模型
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+
+
+    if lib_name == "torch":
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        j = 0
+        path = f'/tmp/Momo_test/{lib_name}_inputs_{j}.json'
+        for i in range(len(api_names)):
+            api_inputs = []
+            api_name = api_names[i]
+            arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")
+            api_code = read_json_api(api_name=api_name, file_path=f"./documentation/api_src_code/", read_mode="src_code")
+            error_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/error_combinations/", read_mode="error_combination")
+            conditions = read_json_api(api_name=api_name, file_path=f"./documentation/conditions/", read_mode="conditions")
+            arg_spaces = read_json_api(api_name=api_name, file_path=f"./documentation/arg_space/", read_mode="arg_space")
+            for arg_combination in arg_combinations:
+                if arg_combination in error_combinations:
+                    continue
+                else:
+                    for arg_space in arg_spaces:
+                        path_type = arg_space["raise"]
+                        prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
+                        if tokenizer.pad_token is None:
+                            tokenizer.pad_token = tokenizer.eos_token  
+                        inputs = generate_input(prompt, tokenizer, model)
+
+                        # 把inputs放到模型参数所在设备
+                        inputs = inputs.to(next(model.parameters()).device)
+
+                        outputs = generate_output(inputs, model, tokenizer)
+                        # 解码输出
+                        outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                        api_boundary = handle_output(outputs_text, model_path)
+                        # 根据api_input_boundary生成测试输入
+                        api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary, model, tokenizer, path_type)
+
+
+                        new_api_input_boundary = {"path_type": path_type, "api_input_boundary": api_input}
+                        api_inputs.append(new_api_input_boundary)
+
+            #存储至json
+            if is_file_too_large(path, max_size_mb=1000):
+                j+=1
+                path = f'/tmp/Momo_test/{lib_name}_inputs_{j}.json'
+                save_api_inputs(api_name, api_inputs, path)
+            else:
+                save_api_inputs(api_name, api_inputs, path)
+            print(f"已完成{api_name}的API输入生成, 进度"+str(i)+"/"+str(len(api_names)))
+
+
+    elif lib_name == "tf":
+        pass
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        # prompt = generate_prompt_3(api_names)
+        # 将输入存入json文件
+
+    # 添加新的深度学习库
+    else:
+        pass
+
+    return
+
+
+#------------------------------------
+# 生成测试案例model
+#------------------------------------
+def generate_test_cases(api_names):
+    # 加载LLM模型
+    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+        api_defs = [line.strip() for line in file]
+    api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+
+    # 加载LLM模型
+    # tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+
+    
+    if lib_name == "torch":
+        j = 0
+        path = f'/tmp/Momo_test/{lib_name}_case_{j}.json'
+
+        for i in range(len(api_names)):
+            # 获取函数名
+            api_name = api_names[i]
+            
+            # 获取函数文档字符串
+            function_name = filter_samenames(i, api_name, api_names)
+            api_def = api_defs[i]
+            i += 1
+            api_doc = get_doc(function_name)
+            # 生成prompt
+            prompt_5 = generate_prompt_5(api_name,api_def, api_doc)
+            
+            print(prompt_5)
+            if i == 1:
+                break
+            # if tokenizer.pad_token is None:
+            #     tokenizer.pad_token = tokenizer.eos_token  # 常见做法
+            # inputs = generate_input(prompt_5, tokenizer, model)
+
+            # # 把inputs放到模型参数所在设备
+            # inputs = inputs.to(next(model.parameters()).device)
+
+            # outputs = generate_output(inputs, model, tokenizer)
+            # # 解码输出
+            # outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # case = handle_output(outputs_text, model_path)
+            # # 运行测试案例，输出结果
+            #             #存储至json
+            # if is_file_too_large(path, max_size_mb=1000):
+            #     j+=1
+            #     path = f'/tmp/Momo_test/{lib_name}_inputs_{j}.json'
+            #     save_api_inputs(api_name, case, path)
+            # else:
+            #     save_api_inputs(api_name, case, path)
+            # print(f"已完成{api_name}的API测试案例model生成, 进度"+str(i)+"/"+str(len(api_names)))
+
+
+    elif lib_name == "tf":
+        pass
+        # 根据上一步生成的api_input生成测试案例
+        
+        # 运行测试案例，输出结果
+
+    # 添加新的深度学习库
+    else:
+        pass
+
+    return
+api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+generate_test_cases(api_names)
+#------------------------------------
+# 对测试案例model注入测试输入并运行
+#------------------------------------
+def run_test_cases():
+
+    def run_api(*args, **kwargs):
+        """Auto-generated test template for torch.nn.Conv2d"""
+        # extract input before class instantiation
+        input_tensor = kwargs.pop("input", None)
+        model = torch.nn.Conv2d(*args, **kwargs)
+        output = model(input_tensor)
+        return output
+    
+    test_inputs = [
+    {
+        "input": torch.randn(1, 3, 32, 32),
+        "in_channels": 3,
+        "out_channels": 8,
+        "kernel_size": 3
+    },
+    {
+        "input": torch.randn(8, 512, 1024, 1024),
+        "in_channels": 512,
+        "out_channels": 1024,
+        "kernel_size": 5,
+        "padding": 2
+    },
+    {
+        "input": torch.randn(1, 3, 64, 64),
+        "in_channels": 3,
+        "out_channels": 8,
+        "kernel_size": 3,
+        "groups": 4
+    }
+]
+
+    execute_api_template(run_api, test_inputs)
+    return
+
+
+
+# def run_api(*args, **kwargs):
+#     """Auto-generated test template for torch.nn.functional.conv1d"""
+#     # call the API
+#     output = torch.nn.functional.conv1d(*args, **kwargs)
+#     return output

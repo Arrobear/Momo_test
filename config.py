@@ -20,7 +20,11 @@ import requests
 import subprocess
 import time
 import uuid
+import random
 from cpgqls_client import *
+import gc
+import psutil
+import traceback
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
@@ -57,8 +61,6 @@ torch_samename_list = [
     "torch.prod",
     "torch.sum"
 ]
-
-#
 
 large_combination_list = ['tf.keras.optimizers.Adadelta',
                            'tf.keras.layers.DepthwiseConv2D', 

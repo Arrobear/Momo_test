@@ -1,4 +1,5 @@
 from config import *
+from generate_prompt import *
 '''
 **该文件内存储完成各种基本操作的函数**
 
@@ -552,3 +553,447 @@ def extract_invalid_parameter_combinations():
     return result
 
 
+#-------------------------------------
+# 统一读取json接口
+#-------------------------------------
+def read_json_api(api_name, file_path, read_mode):
+    if read_mode == "combination":
+        j = 0
+        path = file_path+f'{lib_name}_combinations_{j}.json'
+        while True:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if api_name in data:
+                return data[api_name]  # 二维数组
+            else:
+                j += 1
+                new_path = file_path+f'{lib_name}_combinations_{j}.json'
+                with open(new_path, "r", encoding="utf-8") as f:
+                    new_data = json.load(f)
+                return new_data[api_name]
+            if j > 20:
+                break
+
+    elif read_mode == "error_combinations":
+        path = file_path+f'error_{lib_name}_combinations.json'
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
+
+    elif read_mode == "arg_space":
+        path = file_path+f'{lib_name}_arg_space.json'
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name]
+
+    elif read_mode == "src_code":
+        path = file_path+f'{lib_name}_api_sources.json'
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
+    elif read_mode == "conditions":
+        path = file_path+f'{lib_name}_conditions.json'
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
+    else:
+        return None
+
+# =========================================
+# 保存 API 输入信息的工具函数
+# =========================================
+def save_api_inputs(api_name, api_inputs, save_path):
+    """
+    将 {api_name: api_inputs} 增量写入 JSON 文件。
+    如果文件不存在则创建，存在则在原内容上追加。
+    """
+    # 1️⃣ 如果文件不存在 → 创建目录 & 空文件
+    if not os.path.exists(save_path):
+        dir_path = os.path.dirname(save_path)
+        if dir_path and not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump({}, f, indent=4, ensure_ascii=False)
+        print(f"[📁 Created] 新文件已创建: {save_path}")
+
+    # 2️⃣ 读取已有数据
+    with open(save_path, "r", encoding="utf-8") as f:
+        try:
+            all_data = json.load(f)
+        except json.JSONDecodeError:
+            all_data = {}
+
+    # 3️⃣ 合并（增量保存）
+    if api_name in all_data:
+        all_data[api_name].extend(api_inputs)
+    else:
+        all_data[api_name] = api_inputs
+
+    # 4️⃣ 写回文件
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(all_data, f, indent=4, ensure_ascii=False)
+
+# =========================================
+# 根据规范化的api边界生成测试输入的管道
+# =========================================
+
+# 生成复杂参数
+def generate_complex_param(api_name, param_name, param_info, constraints, model, tokenizer):
+    """
+    使用 LLM 生成复杂对象
+    """
+    api_doc = get_doc(api_name)
+    prompt = generate_prompt_4(api_name, param_name, param_info, constraints, api_doc)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token  
+    inputs = generate_input(prompt, tokenizer, model)
+
+    # 把inputs放到模型参数所在设备
+    inputs = inputs.to(next(model.parameters()).device)
+
+    outputs = generate_output(inputs, model, tokenizer)
+    # 解码输出
+    outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    complex_input = handle_output(outputs_text, model_path)
+
+    return complex_input["test_values"]
+
+def generate_tensor_param_cases(param_name, param_info, max_dim_limit=256):
+    """
+    为 Tensor 类型参数生成一系列覆盖性测试样本字符串。
+    ✅ 特性：
+      - 自动生成 min / mid / max 的维度组合
+      - 支持 float、int、bool、complex、bfloat16 等 dtype
+      - 自动防止超大形状
+      - 统一 dtype 解析，不再生成 torch.torch.float128 之类的错误
+    """
+    shape_min = param_info.get("shape_min", [1])
+    shape_max = param_info.get("shape_max", [3])
+    dtypes = param_info.get("dtypes", ["float32"])
+
+    # -------------------------------
+    # 1️⃣ shape 边界组合：取 min / mid / max
+    # -------------------------------
+    shape_cases = []
+    for lo, hi in zip(shape_min, shape_max):
+        lo = min(int(lo), max_dim_limit)
+        hi = min(int(hi), max_dim_limit)
+
+        if lo == hi:
+            shape_cases.append([lo])
+        else:
+            mid = (lo + hi) // 2
+            mid = min(mid, max_dim_limit)
+            shape_cases.append([lo, mid, hi])
+
+    # 所有组合
+    shape_combos = list(itertools.product(*shape_cases))
+
+    # -------------------------------
+    # 2️⃣ dtype × shape 组合生成字符串
+    # -------------------------------
+    samples = []
+    for dtype_str in dtypes:
+        # 清理 dtype 名称（可能是 "torch.float32"）
+        clean_dtype = dtype_str.split(".")[-1].strip()
+        if not hasattr(torch, clean_dtype):
+            # 避免出现 float128 / 伪类型
+            clean_dtype = "float32"
+
+        for shape in shape_combos:
+            shape_str = ", ".join(str(s) for s in shape)
+
+            # 根据 dtype 构造表达式
+            if any(k in clean_dtype for k in ["float", "half", "bfloat"]):
+                expr = f"{param_name} = torch.randn(({shape_str},), dtype=torch.{clean_dtype})"
+
+            elif any(k in clean_dtype for k in ["int", "long"]):
+                expr = f"{param_name} = torch.randint(0, 10, ({shape_str},), dtype=torch.{clean_dtype})"
+
+            elif "uint8" in clean_dtype:
+                expr = f"{param_name} = torch.randint(0, 256, ({shape_str},), dtype=torch.uint8)"
+
+            elif "bool" in clean_dtype:
+                expr = f"{param_name} = (torch.rand(({shape_str},)) > 0.5).to(dtype=torch.bool)"
+
+            elif "complex" in clean_dtype:
+                # 对 complex 类型，底层实部 dtype 映射
+                base = "float32" if clean_dtype == "complex64" else "float64"
+                expr = (
+                    f"{param_name} = (torch.randn(({shape_str},), dtype=torch.{base}) + "
+                    f"1j * torch.randn(({shape_str},), dtype=torch.{base})).to(dtype=torch.{clean_dtype})"
+                )
+
+            else:
+                expr = f"# Unsupported dtype: {clean_dtype}"
+
+            samples.append(expr)
+
+    return samples
+
+def generate_scalar_param_cases(param_name, param_info):
+    p_type = param_info.get("type")
+    lo = param_info.get("min", 0)
+    hi = param_info.get("max", 10)
+
+    # 1️⃣ 计算中间点
+    mid = (lo + hi) / 2
+
+    # 2️⃣ 生成基本取值
+    if p_type == "int":
+        # 确保整数范围内不重复
+        values = sorted(set([lo, int(mid), hi]))
+        samples = [f"{param_name}={v}" for v in values]
+    elif p_type == "float":
+        # 包括最小、最大、中间、边界偏移
+        mid_lo = lo + (mid - lo) / 2
+        mid_hi = mid + (hi - mid) / 2
+        values = [lo, mid_lo, mid, mid_hi, hi]
+        samples = [f"{param_name}={round(v, 6)}" for v in values]
+    else:
+        raise ValueError(f"Unsupported type: {p_type}")
+
+    return samples
+
+# 生成简单参数
+def generate_sample_param(api_name, param, param_info):
+    """
+    根据 param_info 的类型生成单个参数样本。
+    支持 Tensor、int、float、bool、str、optional、choices 等。
+    """
+    p_type = param_info.get("type")
+
+    # 1️⃣ Tensor 类型
+    if p_type == "Tensor":
+
+        return generate_tensor_param_cases(param, param_info)
+
+    # 2️⃣ 数值型参数
+    elif p_type in ["int", "float"]:
+        return generate_scalar_param_cases(param, param_info)
+
+    # 3️⃣布尔型参数
+    elif p_type == "bool":
+        samples = [f"{param}=True", f"{param}=False"]
+        return samples
+
+    # 4️⃣ 字符串参数（无 choices）
+    elif p_type == "str" and "choices" not in param_info:
+        length = param_info.get("length", 5)
+        samples = []
+        for _ in range(2):  # 生成两个不同字符串
+            s = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=length))
+            samples.append(f"{param}={s}")
+        return samples
+
+    # 5️⃣ 可选参数（可能为 None）
+    elif p_type == "optional":
+        samples = []
+        if "choices" in param_info:
+            # 包含 None + 所有枚举选项
+            samples = [f"{param}=None"] + [f"{param}={choice}" for choice in param_info["choices"]]
+        else:
+            # 默认包含 None + 一个示例值
+            samples = [f"{param}=None", f"{param}=some_value"]
+        return samples
+
+    # 6️⃣ 有 choices（枚举）参数
+    elif "choices" in param_info:
+        choices = param_info["choices"]
+        samples = [f"{param}={choice}" for choice in choices]
+        return samples
+    else:
+        raise ValueError(f"[{api_name}] Unsupported type: {p_type}")
+
+# 检查约束条件
+def check_constraints(combo, constraints, model, tokenizer):
+    """
+    使用 LLM 生成复杂对象
+    """
+    prompt = generate_prompt_6( combo, constraints)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token  
+    inputs = generate_input(prompt, tokenizer, model)
+
+    # 把inputs放到模型参数所在设备
+    inputs = inputs.to(next(model.parameters()).device)
+
+    outputs = generate_output(inputs, model, tokenizer)
+    # 解码输出
+    outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    vaild = handle_output(outputs_text, model_path)
+
+    if "True" in vaild:
+        return True
+    return False
+
+def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=None, tokenizer=None):
+    """
+    根据 API 的边界规范，生成满足约束的测试输入组合。
+    """
+    params = api_boundaries.get("params", {})
+    constraints = api_boundaries.get("constraints", [])
+
+    # 1️⃣ 为每个参数生成候选样本
+    candidate_dict = {}
+    for param_name, param_info in params.items():
+        p_type = param_info.get("type")
+        if p_type in ["Tensor", "int", "float", "bool", "str", "optional"]:
+            candidate_dict[param_name] = generate_sample_param(api_name, param_name, param_info)
+        else:
+            # 使用模型生成复杂参数
+            candidate_dict[param_name] = [generate_complex_param(api_name, param_name, param_info, constraints, model, tokenizer)]
+
+    # 2️⃣ 生成所有参数的笛卡尔积组合
+    keys = list(candidate_dict.keys())
+    all_combos = list(itertools.product(*[candidate_dict[k] for k in keys]))
+
+    # 3️⃣ 约束筛选
+    valid_inputs = []
+    for combo in all_combos:
+        if check_constraints(combo, constraints, model, tokenizer):
+
+            valid_inputs.append(combo)
+
+    return all_combos
+
+
+
+test_bundary = {
+"params": {
+"input": {
+"type": "Tensor",
+"shape_min": [1, 1, 1],
+"shape_max": [128, 4096, 65536],
+"dtypes": ["torch.float16", "torch.bfloat16", "torch.float32", "torch.float64", "torch.complex64", "torch.complex128"]
+},
+"dim": {
+"type": "int",
+"min": 0,
+"max": 3
+},
+"index": {
+"type": "Tensor",
+"shape_min": [1],
+"shape_max": [4096],
+"dtypes": ["torch.int32", "torch.int64"]
+}
+},
+"constraints": [
+"input.dtype == index.dtype",
+"input.dim() >= 1",
+"index.shape[0] >= 1",
+"dim >= 0 and dim < input.dim()",
+"index.shape[0] == input.shape[dim]"
+]
+}
+
+a = generate_test_inputs_from_api_boundaries(api_name = "1", api_boundaries = test_bundary, model=None, tokenizer=None)
+for i in a:
+    print(i)
+
+
+
+def convert_input_to_string(params):
+    """Convert all Tensors in params to torch.randn string expressions."""
+    stringified = {}
+    for k, v in params.items():
+        if isinstance(v, torch.Tensor):
+            shape = tuple(v.shape)
+            dtype = str(v.dtype)
+            # 简化表达：float32 → 默认 torch.randn
+            if dtype == "torch.float32":
+                stringified[k] = f"torch.randn{shape}"
+            else:
+                stringified[k] = f"torch.randn{shape}, dtype={dtype}"
+        else:
+            stringified[k] = v
+    return stringified
+
+def execute_api_template(run_api_func, test_inputs, log_path="error_log.json",
+                         timeout_s=30, perf_time_threshold=5.0, mem_threshold_gb=8):
+    """
+    执行 run_api 函数，对输入进行批量测试。
+    仅记录出错样例（Crash / Numerical / Performance）。
+    """
+
+    results = {
+        "crash": [],
+        "numerical": [],
+        "performance": []
+    }
+
+    def record_issue(issue_type, input_data, err_msg):
+        # 转换输入为字符串表达
+        safe_input = convert_input_to_string(input_data)
+        results[issue_type].append({
+            "input": safe_input,
+            "error": err_msg
+        })
+
+    def get_memory_usage_gb():
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / (1024 ** 3)
+
+    for i, params in enumerate(test_inputs):
+        torch.cuda.empty_cache()
+        gc.collect()
+        start_mem = get_memory_usage_gb()
+        start_time = time.time()
+
+        try:
+            # 执行 API
+            result = run_api_func(**params)
+            elapsed = time.time() - start_time
+            end_mem = get_memory_usage_gb()
+
+            # 性能异常
+            if elapsed > perf_time_threshold or (end_mem - start_mem) > mem_threshold_gb:
+                record_issue("performance", params,
+                             f"Runtime {elapsed:.2f}s, MemDelta {end_mem - start_mem:.2f} GB")
+
+            # 数值异常
+            def has_nan_or_inf(t):
+                return isinstance(t, torch.Tensor) and (torch.isnan(t).any() or torch.isinf(t).any())
+
+            if isinstance(result, torch.Tensor):
+                if has_nan_or_inf(result):
+                    record_issue("numerical", params, "NaN or Inf in output")
+            elif isinstance(result, (tuple, list)):
+                for r in result:
+                    if has_nan_or_inf(r):
+                        record_issue("numerical", params, "NaN or Inf in tuple output")
+                        break
+
+        except RuntimeError as e:
+            err_msg = str(e)
+            if "CUDA" in err_msg or "device-side assert" in err_msg or "out of memory" in err_msg:
+                record_issue("crash", params, f"CUDA-related crash: {err_msg}")
+            else:
+                record_issue("crash", params, f"RuntimeError: {err_msg}")
+
+        except KeyboardInterrupt:
+            print("⛔️ Interrupted by user.")
+            break
+
+        except Exception:
+            record_issue("crash", params, traceback.format_exc())
+
+        # 超时检测
+        elapsed = time.time() - start_time
+        if elapsed > timeout_s:
+            record_issue("performance", params, f"Timeout: exceeded {timeout_s}s")
+
+    # 保存日志（仅包含报错项）
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+
+    print(f"\n⚠️  Error log written to {log_path}")
+    for k, v in results.items():
+        print(f"  {k.upper():12s}: {len(v)} cases")
+
+    return results

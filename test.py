@@ -5,44 +5,22 @@ from generate_prompt import *
 from stage_2_function import *
 
 
-# 示例  
-def parse_scala_list(scala_output: str):
+api_name =  "torch.index_select"
+arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")
+api_code = read_json_api(api_name=api_name, file_path=f"./documentation/api_src_code/", read_mode="src_code")
+arg_spaces = read_json_api(api_name=api_name, file_path=f"./documentation/arg_space/", read_mode="arg_space")
+error_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/error_combinations/", read_mode="error_combination")
+conditions = read_json_api(api_name=api_name, file_path=f"./documentation/conditions/", read_mode="conditions")
 
-    # 提取 List(...) 中的内容
-    items = re.findall(r'"(.*?)"', scala_output)
-    return items
-
-
-
-joern = JoernShell("C:/Users/86184/Desktop/joern-cli/joern.bat")
-cpp_func_name = "conv1d_symint"
-
-query = open_query("pytorch-2.5.1")
-joern.send_command(query)
-
-torch_cheack = joern.send_command(f"cpg.method.name(\"{cpp_func_name}\").call.name(\"TORCH_CHECK\").argument.order(1).code.l")
-torch_contorl = joern.send_command(f"cpg.method.name(\"{cpp_func_name}\").controlStructure.filterNot(_.controlStructureType == \"SWITCH\").condition.code.l")
-print("torch_control_str:", type(torch_cheack), len(torch_cheack), torch_cheack)  
-print("torch_control_str:", type(torch_contorl), len(torch_contorl), torch_contorl)  
-
-parsed_list = parse_scala_list(torch_cheack)
-print(parsed_list)
-parsed_list = parse_scala_list(torch_contorl)
-print(parsed_list)
+for arg_combination in arg_combinations:
+    for arg_space in arg_spaces:
+        prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
+        
+        print(prompt)
+        break
+    break
 
 
-
-# query_1_forhalf= f"cpg.method.name(\"{c_api_1}\")"
-# query_1_backhalf = r""".ast.isControlStructure.filter(_.code.startsWith("switch")).foreach { sw => val cond = sw.code.split("\\(")(1).split("\\)")(0).trim; val cases = sw.astChildren.flatMap(_.astChildren).filter(n => n.code.startsWith("case") || n.code.startsWith("default")).toSeq.map(n => if (n.code.startsWith("case")) n.code.split(":")(0).replace("case","").trim else "default"); println(cond + "->" + cases.mkString(",")) }"""
-
-# c_method_info = joern.send_command(query_1_forhalf + query_1_backhalf)
-
-# print(c_method_info)
-
-joern.send_command("exit")   # 退出 Joern
-
-# # 如果 bat 文件需要手动 exit，添加 exit
- 
 # # 循环写入命令
 # # for cmd in commands:
 # process.stdin.write(query+"\n")  # 写入命令
