@@ -126,7 +126,7 @@ def check_condition_filter(api_names):
 
     large_combination_api = []
 
-    i = 3   #ｉ：循环变量
+    i = 0   #ｉ：循环变量
     j = 0   #ｊ：json文件编号
 
 
@@ -222,19 +222,31 @@ def generate_api_input(api_names):
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
         path = f'/tmp/Momo_test/{lib_name}_inputs_{j}.json'
-        for i in range(len(api_names)):
+        length_api_names = len(api_names)
+        for i in range(length_api_names):
+            
+
             api_inputs = []
             api_name = api_names[i]
-            arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")
-            api_code = read_json_api(api_name=api_name, file_path=f"./documentation/api_src_code/", read_mode="src_code")
-            error_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/error_combinations/", read_mode="error_combination")
-            conditions = read_json_api(api_name=api_name, file_path=f"./documentation/conditions/", read_mode="conditions")
-            arg_spaces = read_json_api(api_name=api_name, file_path=f"./documentation/arg_space/", read_mode="arg_space")
+            arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
+            api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
+            error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+            conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+            arg_spaces = read_json_api(api_name=api_name, file_path=f"../documentation/arg_space/", read_mode="arg_space")
+
+            length_arg_combinations = len(arg_combinations)
+
             for arg_combination in arg_combinations:
+
+                
                 if arg_combination in error_combinations:
                     continue
                 else:
+                    length_arg_spaces = len(arg_spaces)
                     for arg_space in arg_spaces:
+                        print("第"+str(i)+"/"+str(length_api_names)+"个API，第"+ 
+                            str(arg_combinations.index(arg_combination) + 1)+"/"+ str(length_arg_combinations)+"个参数组合，第"+ 
+                            str(arg_spaces.index(arg_space))+"/"+ str(length_arg_spaces)+"个参数空间")
                         path_type = arg_space["raise"]
                         prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
                         if tokenizer.pad_token is None:
@@ -252,7 +264,7 @@ def generate_api_input(api_names):
                         api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary, model, tokenizer, path_type)
 
 
-                        new_api_input_boundary = {"path_type": path_type, "api_input_boundary": api_input}
+                        new_api_input_boundary = {"path_type": path_type, "api_input": api_input}
                         api_inputs.append(new_api_input_boundary)
 
             #存储至json
@@ -289,10 +301,9 @@ def generate_test_cases(api_names):
     api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
 
     # 加载LLM模型
-    # tokenizer = AutoTokenizer.from_pretrained(model_path)
-    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
 
-    
     if lib_name == "torch":
         j = 0
         path = f'/tmp/Momo_test/{lib_name}_case_{j}.json'
@@ -312,27 +323,27 @@ def generate_test_cases(api_names):
             print(prompt_5)
             if i == 1:
                 break
-            # if tokenizer.pad_token is None:
-            #     tokenizer.pad_token = tokenizer.eos_token  # 常见做法
-            # inputs = generate_input(prompt_5, tokenizer, model)
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token  # 常见做法
+            inputs = generate_input(prompt_5, tokenizer, model)
 
-            # # 把inputs放到模型参数所在设备
-            # inputs = inputs.to(next(model.parameters()).device)
+            # 把inputs放到模型参数所在设备
+            inputs = inputs.to(next(model.parameters()).device)
 
-            # outputs = generate_output(inputs, model, tokenizer)
-            # # 解码输出
-            # outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            outputs = generate_output(inputs, model, tokenizer)
+            # 解码输出
+            outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             
-            # case = handle_output(outputs_text, model_path)
-            # # 运行测试案例，输出结果
-            #             #存储至json
-            # if is_file_too_large(path, max_size_mb=1000):
-            #     j+=1
-            #     path = f'/tmp/Momo_test/{lib_name}_inputs_{j}.json'
-            #     save_api_inputs(api_name, case, path)
-            # else:
-            #     save_api_inputs(api_name, case, path)
-            # print(f"已完成{api_name}的API测试案例model生成, 进度"+str(i)+"/"+str(len(api_names)))
+            case = handle_output(outputs_text, model_path)
+            # 运行测试案例，输出结果
+                        #存储至json
+            if is_file_too_large(path, max_size_mb=1000):
+                j+=1
+                path = f'/tmp/Momo_test/{lib_name}_case_{j}.json'
+                save_api_inputs(api_name, case, path)
+            else:
+                save_api_inputs(api_name, case, path)
+            print(f"已完成{api_name}的API测试案例model生成, 进度"+str(i)+"/"+str(len(api_names)))
 
 
     elif lib_name == "tf":
@@ -346,8 +357,11 @@ def generate_test_cases(api_names):
         pass
 
     return
-api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
-generate_test_cases(api_names)
+
+
+
+# api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+# generate_test_cases(api_names)
 #------------------------------------
 # 对测试案例model注入测试输入并运行
 #------------------------------------

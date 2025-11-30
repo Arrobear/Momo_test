@@ -831,6 +831,43 @@ def check_constraints(combo, constraints, model, tokenizer):
         return True
     return False
 
+# 将元组列表转换为字典列表
+def convert_list_to_dict_list(data_list):
+    """
+    data_list 是形如:
+        [('input = ...', 'dim=1', 'index = ...'), ...]
+    返回:
+        [{'input': '...', 'dim': '1', 'index': '...'}, ...]
+    """
+    import ast
+
+    def parse_assignment(expr: str):
+        """
+        将字符串 'key = value' 解析成字典 {key: value}
+        value 保留为原始表达式字符串，不执行 eval
+        """
+        if "=" not in expr:
+            raise ValueError("表达式必须包含 '='")
+
+        key, value = expr.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        return {key: value}
+
+    result = []
+    for tup in data_list:
+        item_dict = {}
+        for expr in tup:
+            # 使用 parse_assignment 解析表达式
+            parsed = parse_assignment(expr)
+            item_dict.update(parsed)
+        result.append(item_dict)
+    
+    return result
+
+
+
 def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=None, tokenizer=None):
     """
     根据 API 的边界规范，生成满足约束的测试输入组合。
@@ -859,7 +896,12 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
 
             valid_inputs.append(combo)
 
-    return all_combos
+    # 4️⃣ 转换为字典列表
+    new_combos = convert_list_to_dict_list(valid_inputs)
+
+    return new_combos
+
+
 
 
 

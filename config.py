@@ -21,7 +21,7 @@ import subprocess
 import time
 import uuid
 import random
-from cpgqls_client import *
+# from cpgqls_client import *
 import gc
 import psutil
 import traceback

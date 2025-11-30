@@ -1448,7 +1448,7 @@ if __name__ == "__main__":
             print(f"[⏭️ Skip] {api_name} 已存在于结果中，跳过。")
             continue
 
-        ppaths = torch_enumerate_python_paths("./documentation/api_guards/torch_api_guards.json", api_name)
+        ppaths = torch_enumerate_python_paths(f"./documentation/api_guards/{lib_name}_api_guards.json", api_name)
         cpaths = torch_enumerate_cpp_paths(api_name)
         merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
 
