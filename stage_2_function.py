@@ -1,6 +1,12 @@
 from config import *
 from typing import List, Dict
 from stage_1_function import *
+'''
+用于在 PyTorch 库中抽取 API 的 Guard 条件。
+
+
+'''
+
 
 TORCH_PATH = Path("C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1") # 修改为本地 PyTorch 源码根目录
 YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml"
@@ -1427,11 +1433,17 @@ cpg.method.name("{cpp_func_name}").foreach {{
 
 # 在当前文件夹生成所有 API 的 guards 和路径枚举结果
 
+
+
 if __name__ == "__main__":
-    api_def_path = f"./documentation/{lib_name}_APIdef.txt"
+    api_def_path = f"../documentation/{lib_name}_APIdef.txt"
+
+    # arg_space 的生成依赖于 api_guards 
+    # api_guards 的生成依赖于本文件中的 guard 提取函数
+    
     # generate_normalized_guards(api_names)
     # torch_extract_api_source(j)
-    save_path = f"./documentation/arg_space/{lib_name}_arg_space.json"
+    save_path = f"../documentation/arg_space/{lib_name}_arg_space.json"
 
     api_names = read_file(api_def_path)
 
