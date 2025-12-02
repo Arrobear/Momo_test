@@ -934,9 +934,9 @@ test_bundary = {
 ]
 }
 
-a = generate_test_inputs_from_api_boundaries(api_name = "1", api_boundaries = test_bundary, model=None, tokenizer=None)
-for i in a:
-    print(i)
+# a = generate_test_inputs_from_api_boundaries(api_name = "1", api_boundaries = test_bundary, model=None, tokenizer=None)
+# for i in a:
+#     print(i)
 
 
 

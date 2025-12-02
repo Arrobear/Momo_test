@@ -8,7 +8,7 @@ if __name__ == "__main__":
   print("", end = "")
 
   #读取函数文档``
-  api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+  api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
   print(f"共{len(api_names)}个API")
 
   # 生成过滤条件 → conditions
