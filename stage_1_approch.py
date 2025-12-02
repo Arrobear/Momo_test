@@ -11,7 +11,7 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 
 
 def generate_api_conditions(api_names):
-    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     # 加载模型
@@ -63,7 +63,7 @@ def generate_api_conditions(api_names):
             break
 
 def base_condition_filter(api_names):
-    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     i = 0
@@ -121,7 +121,7 @@ def check_condition_filter(api_names):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
-    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     large_combination_api = []
@@ -208,9 +208,9 @@ def check_condition_filter(api_names):
 
 def generate_api_input(api_names):
 
-    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
-    api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+    api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
 
     # 加载LLM模型
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -275,6 +275,9 @@ def generate_api_input(api_names):
             else:
                 save_api_inputs(api_name, api_inputs, path)
             print(f"已完成{api_name}的API输入生成, 进度"+str(i)+"/"+str(len(api_names)))
+            
+            if i == 0:
+                break
 
 
     elif lib_name == "tf":
@@ -296,9 +299,9 @@ def generate_api_input(api_names):
 #------------------------------------
 def generate_test_cases(api_names):
     # 加载LLM模型
-    with open(f"./documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
-    api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+    api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
 
     # 加载LLM模型
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -360,7 +363,7 @@ def generate_test_cases(api_names):
 
 
 
-# api_names = read_file(f"./documentation/{lib_name}_APIdef.txt")
+# api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
 # generate_test_cases(api_names)
 #------------------------------------
 # 对测试案例model注入测试输入并运行
