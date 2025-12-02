@@ -905,6 +905,7 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
 
 
 
+<<<<<<< HEAD
 # test_bundary = {
 # "params": {
 # "input": {
@@ -933,6 +934,35 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
 # "index.shape[0] == input.shape[dim]"
 # ]
 # }
+=======
+test_bundary = {
+"params": {
+"input": {
+"type": "Tensor",
+"shape_min": [1, 1, 1],
+"shape_max": [128, 4096, 65536],
+"dtypes": ["torch.float16", "torch.bfloat16", "torch.float32", "torch.float64", "torch.complex64", "torch.complex128"]
+},
+"dim": {
+"type": "int",
+"min": 0,
+"max": 3
+},
+"index": {
+"type": "Tensor",
+"shape_min": [1],
+"shape_max": [4096],
+"dtypes": ["torch.int32", "torch.int64"]
+}
+},
+"constraints": [
+"input.dtype == index.dtype",
+"input.dim() >= 1",
+"index.shape[0] >= 1",
+"dim >= 0 and dim < input.dim()",
+"index.shape[0] == input.shape[dim]"
+]
+}
 
 # a = generate_test_inputs_from_api_boundaries(api_name = "1", api_boundaries = test_bundary, model=None, tokenizer=None)
 # for i in a:

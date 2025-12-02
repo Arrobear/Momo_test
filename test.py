@@ -5,20 +5,27 @@ from generate_prompt import *
 from stage_2_function import *
 
 
-api_name =  "torch.index_select"
-arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")
-api_code = read_json_api(api_name=api_name, file_path=f"./documentation/api_src_code/", read_mode="src_code")
-arg_spaces = read_json_api(api_name=api_name, file_path=f"./documentation/arg_space/", read_mode="arg_space")
-error_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/error_combinations/", read_mode="error_combination")
-conditions = read_json_api(api_name=api_name, file_path=f"./documentation/conditions/", read_mode="conditions")
+import torch
+print(torch.__version__)
+print(torch.version.cuda)
+print(torch.cuda.is_available())
 
-for arg_combination in arg_combinations:
-    for arg_space in arg_spaces:
-        prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
+
+
+# api_name =  "torch.index_select"
+# arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")
+# api_code = read_json_api(api_name=api_name, file_path=f"./documentation/api_src_code/", read_mode="src_code")
+# arg_spaces = read_json_api(api_name=api_name, file_path=f"./documentation/arg_space/", read_mode="arg_space")
+# error_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/error_combinations/", read_mode="error_combination")
+# conditions = read_json_api(api_name=api_name, file_path=f"./documentation/conditions/", read_mode="conditions")
+
+# for arg_combination in arg_combinations:
+#     for arg_space in arg_spaces:
+#         prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
         
-        print(prompt)
-        break
-    break
+#         print(prompt)
+#         break
+#     break
 
 
 # # 循环写入命令
