@@ -413,7 +413,7 @@ def handle_output(text: str, model_path: str):
             return json_content
         except json.JSONDecodeError as e:
             return None
-    if model_path == "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B":
+    if "DeepSeek-R1-Distill-Qwen-32B" in model_path:
         end_tag = "</think>"
         if end_tag not in text:
             add_log("未找到 </think> 标签")
@@ -431,59 +431,163 @@ def handle_output(text: str, model_path: str):
         except json.JSONDecodeError as e:
             return None
 
+
+def extract_clean_json(text: str):
+    """
+    从大模型输出中抽取 </think> 后的 JSON，
+    自动补大括号、去除重复字段、修复常见错误，返回最终解析出的 dict。
+    """
+
+    end_tag = "</think>"
+    if end_tag not in text:
+        return None
+
+    # 1. 获取 </think> 后的内容
+    after = text.split(end_tag, 1)[1].strip()
+
+    # 2. 定位 JSON 开始位置
+    start = after.find("{")
+    if start == -1:
+        return None
+
+    fragment = after[start:]
+
+    # 3. 使用大括号平衡提取完整 JSON 字符串
+    json_str = balance_json_braces(fragment)
+
+    # 4. 强制去掉末尾非 JSON 内容
+    json_str = trim_after_last_brace(json_str)
+
+    # 5. 尝试解析 JSON
+    try:
+        data = json.loads(json_str)
+    except Exception:
+        # 如果解析失败，尝试增强修复
+        fixed = force_fix_json(json_str)
+        try:
+            data = json.loads(fixed)
+        except Exception:
+            return None
+
+    # 6. constraints 去重（如果存在）
+    if isinstance(data, dict) and "constraints" in data:
+        data["constraints"] = list(dict.fromkeys(data["constraints"]))
+
+    return data
+
+
+def balance_json_braces(fragment: str) -> str:
+    """
+    使用大括号平衡算法提取最早闭合的 JSON。
+    如果缺失 '}' 则自动补齐。
+    """
+    balance = 0
+    end_index = -1
+
+    for i, ch in enumerate(fragment):
+        if ch == "{":
+            balance += 1
+        elif ch == "}":
+            balance -= 1
+
+        # 找到完整平衡点
+        if balance == 0 and i > 0:
+            end_index = i
+            break
+
+    # 如果没闭合 → 自动补齐缺失括号
+    if end_index == -1:
+        return fragment + "}" * balance
+    else:
+        return fragment[:end_index + 1]
+
+
+def trim_after_last_brace(s: str) -> str:
+    """
+    去掉 JSON 后的多余文本，只保留到最后一个大括号。
+    """
+    last = s.rfind("}")
+    if last != -1:
+        return s[:last + 1]
+    return s
+
+
+def force_fix_json(s: str) -> str:
+    """
+    强制修复 JSON：用于 json.loads() 初次失败的情况。
+    目前主要操作：
+    - 去掉 JSON 后多余部分
+    - 补齐缺失括号
+    """
+    s = trim_after_last_brace(s)
+
+    # 简单检查大括号平衡，如果不够补齐
+    open_count = s.count("{")
+    close_count = s.count("}")
+
+    if close_count < open_count:
+        s += "}" * (open_count - close_count)
+
+    return s
+
+
+
 # 封装不同模型的输入输出模式 
 def generate_input(prompt, tokenizer, model):
 
-    model_path_list = [
-        "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
-        "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
-    ]
+    # model_path_list = [
+    #     "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
+    #     "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+    #     "/home/chaoni/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+    # ]
 
-    if model_path not in model_path_list:
+    # if model_path not in model_path_list:
     
-        inputs = tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=4096,
-            padding=True
-        )
-    else:
-        inputs = tokenizer.apply_chat_template(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=4096,
-            padding=True
-        )
+    #     inputs = tokenizer(
+    #         prompt,
+    #         return_tensors="pt",
+    #         truncation=True,
+    #         max_length=4096,
+    #         padding=True
+    #     )
+    # else:
+    # print(111111111111111111)
+    inputs = tokenizer.apply_chat_template(
+        prompt,
+        return_tensors="pt",
+        truncation=True,
+        max_length=4096,
+        #padding = "max_length"
+        padding=True
+    )
     return inputs
 
 def generate_output(inputs, model, tokenizer):
-    model_path_list = [
-        "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
-        "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
-    ]
+    # model_path_list = [
+    #     "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
+    #     "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+    # ]
 
-    if model_path not in model_path_list:
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=2048,  # 可以更大
-            do_sample=False,      # 启用采样
-            temperature=1.0,     # 增加多样性
-            top_p=1.0,
-            eos_token_id=tokenizer.eos_token_id,
-            pad_token_id=tokenizer.pad_token_id
-        )
-    else:
-        outputs = model.generate(
-            inputs,
-            max_new_tokens=2048,  # 可以更大
-            do_sample=False,      # 启用采样
-            temperature=1.0,     # 增加多样性
-            top_p=1.0,
-            eos_token_id=tokenizer.eos_token_id,
-            pad_token_id=tokenizer.pad_token_id
-        )
+    # if model_path not in model_path_list:
+    #     outputs = model.generate(
+    #         **inputs,
+    #         max_new_tokens=2048,  # 可以更大
+    #         do_sample=False,      # 启用采样
+    #         temperature=1.0,     # 增加多样性
+    #         top_p=1.0,
+    #         eos_token_id=tokenizer.eos_token_id,
+    #         pad_token_id=tokenizer.pad_token_id
+    #     )
+    # else:
+    outputs = model.generate(
+        inputs,
+        max_new_tokens=2048,  # 可以更大
+        do_sample=False,      # 启用采样
+        temperature=1.0,     # 增加多样性
+        top_p=1.0,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.pad_token_id
+    )
     return outputs
 
 # 预防同名函数
@@ -768,21 +872,21 @@ def generate_sample_param(api_name, param, param_info):
     p_type = param_info.get("type")
 
     # 1️⃣ Tensor 类型
-    if p_type == "Tensor":
+    if "Tensor" in p_type:
 
         return generate_tensor_param_cases(param, param_info)
 
     # 2️⃣ 数值型参数
-    elif p_type in ["int", "float"]:
+    elif p_type in ["Int", "Float"]:
         return generate_scalar_param_cases(param, param_info)
 
     # 3️⃣布尔型参数
-    elif p_type == "bool":
+    elif "Bool" in p_type:
         samples = [f"{param}=True", f"{param}=False"]
         return samples
 
     # 4️⃣ 字符串参数（无 choices）
-    elif p_type == "str" and "choices" not in param_info:
+    elif "Str" in p_type and "choices" not in param_info:
         length = param_info.get("length", 5)
         samples = []
         for _ in range(2):  # 生成两个不同字符串
@@ -791,7 +895,7 @@ def generate_sample_param(api_name, param, param_info):
         return samples
 
     # 5️⃣ 可选参数（可能为 None）
-    elif p_type == "optional":
+    elif "Optional" in p_type:
         samples = []
         if "choices" in param_info:
             # 包含 None + 所有枚举选项
@@ -804,31 +908,15 @@ def generate_sample_param(api_name, param, param_info):
     # 6️⃣ 有 choices（枚举）参数
     elif "choices" in param_info:
         choices = param_info["choices"]
-        samples = [f"{param}={choice}" for choice in choices]
+        samples = [f"{param}=None"] + [f"{param}={choice}" for choice in choices] 
         return samples
     else:
         raise ValueError(f"[{api_name}] Unsupported type: {p_type}")
 
 # 检查约束条件
-def check_constraints(combo, constraints, model, tokenizer):
-    """
-    使用 LLM 生成复杂对象
-    """
-    prompt = generate_prompt_6( combo, constraints)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token  
-    inputs = generate_input(prompt, tokenizer, model)
+def check_constraints(combo, constraints):
 
-    # 把inputs放到模型参数所在设备
-    inputs = inputs.to(next(model.parameters()).device)
 
-    outputs = generate_output(inputs, model, tokenizer)
-    # 解码输出
-    outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    vaild = handle_output(outputs_text, model_path)
-
-    if "True" in vaild:
-        return True
     return False
 
 # 将元组列表转换为字典列表
@@ -891,8 +979,12 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
 
     # 3️⃣ 约束筛选
     valid_inputs = []
+    i = 1
+    length = len(all_combos)
     for combo in all_combos:
-        if check_constraints(combo, constraints, model, tokenizer):
+        print("第"+str(i)+"/"+str(length)+"个")
+        i += 1
+        if check_constraints(combo, constraints):
 
             valid_inputs.append(combo)
 
