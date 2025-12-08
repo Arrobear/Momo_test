@@ -996,8 +996,6 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
 
 
 
-
-<<<<<<< HEAD
 # test_bundary = {
 # "params": {
 # "input": {
@@ -1026,7 +1024,6 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
 # "index.shape[0] == input.shape[dim]"
 # ]
 # }
-=======
 test_bundary = {
 "params": {
 "input": {
