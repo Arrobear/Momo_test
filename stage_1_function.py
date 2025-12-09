@@ -890,14 +890,14 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
     all_combos = list(itertools.product(*[candidate_dict[k] for k in keys]))
 
     # 3️⃣ 约束筛选
-    valid_inputs = []
-    for combo in all_combos:
-        if check_constraints(combo, constraints, model, tokenizer):
+    # valid_inputs = []
+    # for combo in all_combos:
+    #     if check_constraints(combo, constraints, model, tokenizer):
 
-            valid_inputs.append(combo)
+    #         valid_inputs.append(combo)
 
     # 4️⃣ 转换为字典列表
-    new_combos = convert_list_to_dict_list(valid_inputs)
+    new_combos = convert_list_to_dict_list(all_combos)
 
     return new_combos
 
