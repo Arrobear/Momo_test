@@ -115,6 +115,7 @@ def generate_prompt_1(fun_string, api_def, api_doc):
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt_1}
         ]
+        # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     else:
         ori_prompt_1 = ori_prompt + notion_2
         prompt = ori_prompt_1
@@ -173,6 +174,7 @@ def generate_prompt_2(fun_string, args, api_def, api_doc):
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt}
         ]
+    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
 
 
@@ -312,6 +314,7 @@ def generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt}
         ]
+    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
 
 
@@ -456,6 +459,7 @@ def generate_prompt_4(api_name, param_name, param_info, param_constraints, api_d
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt}
         ]
+    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
 
 
@@ -551,6 +555,7 @@ def generate_prompt_5(api_name, arg_signature, api_doc):
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt}
         ]
+    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
 
 
@@ -620,4 +625,5 @@ def generate_prompt_6(combo, constraint):
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": ori_prompt}
         ]
+    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
