@@ -27,6 +27,9 @@ if __name__ == "__main__":
   # 获取源代码(在stage_2_function.py中完成) → api_src_code
 
   # 综合参数组合+源代码+文档字符串，生成输入
+  # generate_api_boundary(api_names)
+
+  # 根据上一步生成的boundary生成输入
   generate_api_input(api_names)
 
   # 生成测试案例模板

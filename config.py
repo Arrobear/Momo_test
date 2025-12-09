@@ -25,6 +25,7 @@ import random
 import gc
 import psutil
 import traceback
+from z3 import *
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"

@@ -704,6 +704,11 @@ def read_json_api(api_name, file_path, read_mode):
             data = json.load(f)
         if api_name in data:
             return data[api_name] 
+    elif read_mode == "boundary":
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
     else:
         return None
 
@@ -763,8 +768,10 @@ def generate_complex_param(api_name, param_name, param_info, constraints, model,
     # 解码输出
     outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
     complex_input = handle_output(outputs_text, model_path)
-
-    return complex_input["test_values"]
+    complex_input = json.loads(complex_input)
+    complex_input_list = complex_input["test_values"]
+    samples = [f"{param_name}={v}" for v in complex_input_list]
+    return samples
 
 def generate_tensor_param_cases(param_name, param_info, max_dim_limit=256):
     """
@@ -870,23 +877,23 @@ def generate_sample_param(api_name, param, param_info):
     支持 Tensor、int、float、bool、str、optional、choices 等。
     """
     p_type = param_info.get("type")
-
+    p_type = p_type.lower()
     # 1️⃣ Tensor 类型
-    if "Tensor" in p_type:
+    if "tensor" in p_type:
 
         return generate_tensor_param_cases(param, param_info)
 
     # 2️⃣ 数值型参数
-    elif p_type in ["Int", "Float"]:
+    elif p_type in ["int", "float"]:
         return generate_scalar_param_cases(param, param_info)
 
     # 3️⃣布尔型参数
-    elif "Bool" in p_type:
+    elif "bool" in p_type:
         samples = [f"{param}=True", f"{param}=False"]
         return samples
 
     # 4️⃣ 字符串参数（无 choices）
-    elif "Str" in p_type and "choices" not in param_info:
+    elif "str" in p_type and "choices" not in param_info:
         length = param_info.get("length", 5)
         samples = []
         for _ in range(2):  # 生成两个不同字符串
@@ -895,7 +902,7 @@ def generate_sample_param(api_name, param, param_info):
         return samples
 
     # 5️⃣ 可选参数（可能为 None）
-    elif "Optional" in p_type:
+    elif "optional" in p_type:
         samples = []
         if "choices" in param_info:
             # 包含 None + 所有枚举选项
@@ -912,12 +919,162 @@ def generate_sample_param(api_name, param, param_info):
         return samples
     else:
         raise ValueError(f"[{api_name}] Unsupported type: {p_type}")
+# -------------------------------------------------------
+# Z3约束检查
+# -------------------------------------------------------
+# -------------------------------------------------------
+# 1. Parse tensor creation expressions (static, no eval)
+# -------------------------------------------------------
 
-# 检查约束条件
+def parse_tensor_expr(expr: str):
+    """
+    Extract shape, dtype for expressions like:
+    - torch.randn((128,256,256), dtype=torch.float64)
+    - torch.randint(0,10,(256,), dtype=torch.int64)
+    - (...).to(dtype=torch.complex128)
+    - 1j * torch.randn(...)
+    """
+
+    meta = {"defined": True}
+
+    # extract .to(dtype=xxx)
+    m = re.search(r'\.to\(dtype=torch\.(\w+)\)', expr)
+    if m:
+        meta["dtype"] = f"torch.{m.group(1)}"
+
+    # extract dtype=... from inside call
+    m = re.search(r'dtype=torch\.(\w+)', expr)
+    if m and "dtype" not in meta:
+        meta["dtype"] = f"torch.{m.group(1)}"
+
+    # extract shape: (... , ...)
+    m = re.search(r'\((\s*\d+(?:\s*,\s*\d+)*\s*,?)\)', expr)
+    if m:
+        shape_str = m.group(1)
+        shape = tuple(int(s) for s in shape_str.split(",") if s.strip().isdigit())
+        meta["shape"] = list(shape)
+        meta["dim"] = len(shape)
+
+    # default dtype guess if missing
+    if "dtype" not in meta:
+        meta["dtype"] = "unknown"
+
+    return meta
+
+
+# -------------------------------------------------------
+# 2. Convert parsed meta to Z3 objects
+# -------------------------------------------------------
+
+def meta_to_z3(meta):
+    z = {}
+    z["shape"] = [IntVal(dim) for dim in meta.get("shape",[])]
+    z["dim"] = IntVal(meta.get("dim",0))
+    z["dtype"] = StringVal(meta.get("dtype","unknown"))
+    z["defined"] = BoolVal(meta.get("defined", True))
+    return z
+
+
+# -------------------------------------------------------
+# 3. Basic expression parser (same as before)
+# -------------------------------------------------------
+
+def parse_basic_expr(expr, env):
+    expr = expr.strip()
+
+    # literal int
+    if expr.isdigit():
+        return IntVal(int(expr))
+
+    # shape[index]
+    m = re.match(r"(\w+)\.shape\[(\d+)\]", expr)
+    if m:
+        return env[m.group(1)]["shape"][int(m.group(2))]
+
+    # dtype()
+    m = re.match(r"(\w+)\.dtype\(\)", expr)
+    if m:
+        return env[m.group(1)]["dtype"]
+
+    # dtype field
+    m = re.match(r"(\w+)\.dtype$", expr)
+    if m:
+        return env[m.group(1)]["dtype"]
+
+    # defined()
+    m = re.match(r"(\w+)\.defined\(\)", expr)
+    if m:
+        return env[m.group(1)]["defined"]
+
+    # simple var
+    if expr in env:
+        return env[expr]
+
+    return None
+
+
+# -------------------------------------------------------
+# 4. Constraint parser: string → Z3
+# -------------------------------------------------------
+
+def parse_constraint_to_z3(cstr, env):
+    cstr = cstr.strip()
+
+    # "A || B"
+    if "||" in cstr:
+        return Or(*[parse_constraint_to_z3(p, env) for p in cstr.split("||")])
+
+    # "A && B"
+    if "&&" in cstr:
+        return And(*[parse_constraint_to_z3(p, env) for p in cstr.split("&&")])
+
+    # "!A"
+    if cstr.startswith("!"):
+        return Not(parse_constraint_to_z3(cstr[1:].strip(), env))
+
+    # comparison ops
+    for op in ["==","<=",">=","<",">"]:
+        if op in cstr:
+            lhs, rhs = cstr.split(op)
+            lhs = parse_basic_expr(lhs.strip(), env)
+            rhs = parse_basic_expr(rhs.strip(), env)
+            mapping = {
+                "==": lambda a,b: a==b,
+                "<=": lambda a,b: a<=b,
+                ">=": lambda a,b: a>=b,
+                "<":  lambda a,b: a<b,
+                ">":  lambda a,b: a>b
+            }
+            return mapping[op](lhs,rhs)
+
+    raise ValueError(f"Unsupported constraint: {cstr}")
+
+
+# -------------------------------------------------------
+# 5. main: check_constraints()
+# -------------------------------------------------------
+
 def check_constraints(combo, constraints):
+    solver = Solver()
 
+    # Build Z3 env
+    env = {}
+    for name, expr in combo.items():
+        if isinstance(expr, str):
+            meta = parse_tensor_expr(expr)
+            env[name] = meta_to_z3(meta)
+        elif expr.isdigit():
+            env[name] = IntVal(int(expr))
+        else:
+            raise TypeError("Unsupported combo content")
 
-    return False
+    # Add constraints
+    for c in constraints:
+        solver.add(parse_constraint_to_z3(c, env))
+
+    sat = solver.check()
+    return sat, solver.model() if sat == sat else None
+
 
 # 将元组列表转换为字典列表
 def convert_list_to_dict_list(data_list):
@@ -978,52 +1135,22 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
     all_combos = list(itertools.product(*[candidate_dict[k] for k in keys]))
 
     # 3️⃣ 约束筛选
-    valid_inputs = []
-    i = 1
-    length = len(all_combos)
-    for combo in all_combos:
-        print("第"+str(i)+"/"+str(length)+"个")
-        i += 1
-        if check_constraints(combo, constraints):
+    # valid_inputs = []
+    # i = 1
+    # length = len(all_combos)
+    # for combo in all_combos:
+    #     print("第"+str(i)+"/"+str(length)+"个")
+    #     i += 1
+    #     if check_constraints(combo, constraints):
 
-            valid_inputs.append(combo)
+    #         valid_inputs.append(combo)
 
     # 4️⃣ 转换为字典列表
-    new_combos = convert_list_to_dict_list(valid_inputs)
+    new_combos = convert_list_to_dict_list(all_combos)
 
     return new_combos
 
 
-
-
-# test_bundary = {
-# "params": {
-# "input": {
-# "type": "Tensor",
-# "shape_min": [1, 1, 1],
-# "shape_max": [128, 4096, 65536],
-# "dtypes": ["torch.float16", "torch.bfloat16", "torch.float32", "torch.float64", "torch.complex64", "torch.complex128"]
-# },
-# "dim": {
-# "type": "int",
-# "min": 0,
-# "max": 3
-# },
-# "index": {
-# "type": "Tensor",
-# "shape_min": [1],
-# "shape_max": [4096],
-# "dtypes": ["torch.int32", "torch.int64"]
-# }
-# },
-# "constraints": [
-# "input.dtype == index.dtype",
-# "input.dim() >= 1",
-# "index.shape[0] >= 1",
-# "dim >= 0 and dim < input.dim()",
-# "index.shape[0] == input.shape[dim]"
-# ]
-# }
 test_bundary = {
 "params": {
 "input": {

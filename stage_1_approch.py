@@ -203,10 +203,10 @@ def check_condition_filter(api_names):
 
 
 #------------------------------------
-# 生成api input
+# 生成api boundary
 #------------------------------------
 
-def generate_api_input(api_names):
+def generate_api_boundary(api_names):
 
     with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
@@ -279,11 +279,11 @@ def generate_api_input(api_names):
             #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = f'/home/chaoni/haoyahui/documentation/arg_boundary/{lib_name}_inputs_{j}.json'
+                path = f'/home/chaoni/haoyahui/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
                 save_api_inputs(api_name, api_inputs, path)
             else:
                 save_api_inputs(api_name, api_inputs, path)
-            print(f"已完成{api_name}的API输入生成, 进度"+str(i)+"/"+str(len(api_names)))
+            print(f"已完成{api_name}的API boundary生成, 进度"+str(i)+"/"+str(len(api_names)))
             if i == 50:
                 break
 
@@ -301,6 +301,68 @@ def generate_api_input(api_names):
 
     return
 
+#------------------------------------
+# 生成api input
+#------------------------------------
+
+def generate_api_input(api_names):
+    # with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    #     api_defs = [line.strip() for line in file]
+    api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
+
+    # 加载LLM模型
+    # tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+
+    if lib_name == "torch":
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        j = 0
+        k = 0
+        path = f'/home/chaoni/haoyahui/documentation/api_input/{lib_name}_inputs_{j}.json'
+        length_api_names = len(api_names)
+        for i in range(length_api_names):
+            api_inputs = []
+            api_name = api_names[i]
+            api_boundarys = read_json_api(api_name=api_name, file_path=f"../documentation/arg_boundary/{lib_name}_boundary_{k}.json", read_mode="boundary")
+            if api_boundarys == None:
+                k += 1
+                api_boundarys = read_json_api(api_name=api_name, file_path=f"../documentation/arg_boundary/{lib_name}_boundary_{k}.json", read_mode="boundary")
+
+            # 将api_boundary转换为字典形式
+            # api_boundary = json.loads(api_boundary_str)
+            n = 0
+            for api_boundary in api_boundarys:
+                
+                api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary["api_input"], model = None, tokenizer = None)
+                new_api_input = {"path_type": api_boundary["path_type"], "api_input": api_input}
+                api_inputs.append(new_api_input)
+                if n == 0:
+                    break
+            #存储至json
+            if is_file_too_large(path, max_size_mb=1000):
+                j+=1
+                path = f'/home/chaoni/haoyahui/documentation/api_input/{lib_name}_input_{j}.json'
+                save_api_inputs(api_name, api_inputs, path)
+            else:
+                save_api_inputs(api_name, api_inputs, path)
+            print(f"已完成{api_name}的API输入生成, 进度"+str(i)+"/"+str(len(api_names)))
+            if i < 1:
+                break
+
+
+    elif lib_name == "tf":
+        pass
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        # prompt = generate_prompt_3(api_names)
+        # 将输入存入json文件
+
+    # 添加新的深度学习库
+    else:
+        pass
+
+    return
 
 #------------------------------------
 # 生成测试案例model
