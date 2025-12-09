@@ -978,10 +978,10 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
     all_combos = list(itertools.product(*[candidate_dict[k] for k in keys]))
 
     # 3️⃣ 约束筛选
-    # valid_inputs = []
+    valid_inputs = []
     i = 1
     length = len(all_combos)
-    # for combo in all_combos:
+    for combo in all_combos:
         print("第"+str(i)+"/"+str(length)+"个")
         i += 1
     #     if check_constraints(combo, constraints):
