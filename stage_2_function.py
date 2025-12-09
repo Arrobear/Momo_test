@@ -159,7 +159,7 @@ def torch_find_cpp_name(api_name: str) -> str:
     支持 structured_delegate / autogen / CompositeAutograd 等。
     """
     func_target = api_name.split(".")[-1]
-
+    # print(func_target)
     with open(YAML_PATH, "r", encoding="utf-8") as f:
         yaml_docs = yaml.safe_load(f)
 
@@ -167,22 +167,47 @@ def torch_find_cpp_name(api_name: str) -> str:
     def normalize_name(name: str) -> str:
         return name.strip().lower().replace(" ", "").replace(".", "_")
 
-    def find_entry(target, fuzzy=False):
+    def find_entry(target):
         target_norm = normalize_name(target)
+
+        matched_entries = []
+        started = False  # 是否已经开始进入连续匹配阶段
+
         for entry in yaml_docs:
             func = entry.get("func")
             if not func:
-                continue
+                # 如果还没开始匹配，继续跳过
+                if not started:
+                    continue
+                else:
+                    # 已经开始匹配了，但现在没 func，算不匹配 → 停止
+                    break
+
             func_name_only = func.split("(", 1)[0].strip()
             func_norm = normalize_name(func_name_only)
-            if not fuzzy:
-                if func_norm == target_norm:
-                    return entry
-            else:
-                if target_norm in func_norm:
-                    return entry
-        return None
 
+            if target_norm in func_norm:
+                matched_entries.append(entry)
+                started = True  # 进入连续匹配模式
+            else:
+                # 如果已经进入匹配阶段，但现在不匹配 → 停止
+                if started:
+                    break
+                # 如果还没开始匹配 → 忽略继续找第一个
+                continue
+
+        # 如果没有任何匹配项
+        if not matched_entries:
+            return None
+
+        # 优先挑出真正实现的 entry（CPU/CUDA kernel）
+        for entry in matched_entries:
+            dispatch = entry.get("dispatch", {})
+            if "CPU" in dispatch or "CUDA" in dispatch:
+                return entry
+
+        # 如果没有 kernel 实现，fallback 返回第一个匹配项
+        return matched_entries[0]
 
 
     def extract_dispatch(dispatch):
@@ -196,12 +221,12 @@ def torch_find_cpp_name(api_name: str) -> str:
         # fallback
         return list(dispatch.values())[0] if dispatch else None
 
-
+    #cpp_name = None
     # -------- 判断 builtin --------
     is_builtin = "torch._C" in api_name or api_name.count(".") == 1
 
     # -------- 精确匹配 --------
-    entry = find_entry(func_target, fuzzy=False)
+    entry = find_entry(func_target)
     if entry:
         dispatch = entry.get("dispatch")
         structured_delegate = entry.get("structured_delegate")
@@ -215,7 +240,7 @@ def torch_find_cpp_name(api_name: str) -> str:
 
         # (2) structured_delegate
         if structured_delegate:
-            delegate_entry = find_entry(structured_delegate, fuzzy=False)
+            delegate_entry = find_entry(structured_delegate)
             impl = extract_dispatch(delegate_entry.get("dispatch") if delegate_entry else None)
             if impl:
                 # print(f"[TRACE] {api_name} → delegate {structured_delegate} → {impl}")
@@ -223,7 +248,7 @@ def torch_find_cpp_name(api_name: str) -> str:
 
         # (3) autogen
         if autogen:
-            autogen_entry = find_entry(autogen, fuzzy=False)
+            autogen_entry = find_entry(autogen)
             impl = extract_dispatch(autogen_entry.get("dispatch") if autogen_entry else None)
             if impl:
                 # print(f"[TRACE] {api_name} → autogen {autogen} → {impl}")
@@ -231,7 +256,7 @@ def torch_find_cpp_name(api_name: str) -> str:
 
     # -------- 模糊匹配（仅 builtin）--------
     if is_builtin:
-        entry = find_entry(func_target, fuzzy=True)
+        entry = find_entry(func_target)
         impl = extract_dispatch(entry.get("dispatch") if entry else None)
         if impl:
             # print(f"[TRACE] {api_name} → fuzzy match {entry.get('func')} → {impl}")
@@ -239,6 +264,7 @@ def torch_find_cpp_name(api_name: str) -> str:
 
     # print(f"[WARN] 未找到 dispatch: {api_name}")
     return None
+
 
 def torch_extract_cpp_guards(cpp_func_name: str) -> list:
     """
@@ -840,7 +866,7 @@ def generate_normalized_guards(api_names: list[str]):
     - 捕获最小异常防止中断
     - 立即写入文件避免进度丢失
     """
-    output_path = f"{lib_name}_api_guards.json"
+    output_path = f"../documentation/api_guards/{lib_name}_api_guards.json"
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -855,6 +881,8 @@ def generate_normalized_guards(api_names: list[str]):
         all_results = {}
 
     for api in api_names:
+        torch_extract_api_source(api)
+
         if api in all_results:
             #print(f"⏩ Skipping already processed API: {api}")
             continue
@@ -1325,7 +1353,7 @@ def torch_extract_api_source(api_name: str):
     提取给定 PyTorch API 的 Python 源码和对应 C++ 源码。
     统一保存到一个 JSON 文件，key 为 api_name。
     """
-    output_path = f"{lib_name}_api_sources.json"
+    output_path = f"../documentation/api_src_code/{lib_name}_api_sources.json"
     pytorch_root = "C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1"
 
     # ========== 1️⃣ Python 源码提取 ==========
@@ -1365,14 +1393,14 @@ def torch_extract_api_source(api_name: str):
     #print(f"[CPP] 提取 {cpp_func_name} 的源码")
 
     query_meta = f'''
-cpg.method.name("{cpp_func_name}").foreach {{
-  m =>
-    val fn  = m.filename
-    val ln1 = m.lineNumber.getOrElse(-1).toString
-    val ln2 = m.lineNumberEnd.getOrElse(-1).toString
-    println("META_BEGIN" + fn + "||" + ln1 + "||" + ln2 + "META_END")
-}}
-'''
+        cpg.method.name("{cpp_func_name}").foreach {{
+        m =>
+            val fn  = m.filename
+            val ln1 = m.lineNumber.getOrElse(-1).toString
+            val ln2 = m.lineNumberEnd.getOrElse(-1).toString
+            println("META_BEGIN" + fn + "||" + ln1 + "||" + ln2 + "META_END")
+        }}
+        '''
     meta_raw = joern.send_command(query_meta)
     m = re.search(r'META_BEGIN(.*?)META_END', meta_raw, re.DOTALL)
     if m:
@@ -1441,40 +1469,44 @@ if __name__ == "__main__":
     # arg_space 的生成依赖于 api_guards 
     # api_guards 的生成依赖于本文件中的 guard 提取函数
     
-    # generate_normalized_guards(api_names)
-    # torch_extract_api_source(j)
-    save_path = f"../documentation/arg_space/{lib_name}_arg_space.json"
+    j = 0
+    save_path = f"../documentation/arg_space/{lib_name}_arg_space_{j}.json"
 
     api_names = read_file(api_def_path)
+    # 生成api_guards.json 和 api_sources.json
+    generate_normalized_guards(api_names)
 
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    if os.path.exists(save_path):
-        with open(save_path, "r", encoding="utf-8") as f:
-            grouped_results = json.load(f)
-    else:
-        grouped_results = {}
+    # os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    for api_name in api_names:
-        if api_name in grouped_results:
-            print(f"[⏭️ Skip] {api_name} 已存在于结果中，跳过。")
-            continue
+    # if os.path.exists(save_path):
+    #     with open(save_path, "r", encoding="utf-8") as f:
+    #         grouped_results = json.load(f)
+    # else:
+    #     grouped_results = {}
 
-        ppaths = torch_enumerate_python_paths(f"./documentation/api_guards/{lib_name}_api_guards.json", api_name)
-        cpaths = torch_enumerate_cpp_paths(api_name)
-        merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
+    # for api_name in api_names:
+    #     if api_name in grouped_results:
+    #         print(f"[⏭️ Skip] {api_name} 已存在于结果中，跳过。")
+    #         continue
 
-        grouped_results[api_name] = grouped_results.get(api_name, [])
-        grouped_results[api_name].extend(merged_paths)
+    #     ppaths = torch_enumerate_python_paths(f"./documentation/api_guards/{lib_name}_api_guards.json", api_name)
+    #     cpaths = torch_enumerate_cpp_paths(api_name)
+    #     merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
 
-        try:
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(grouped_results, f, indent=4, ensure_ascii=False)
-            print(f"[💾 Saved] {api_name}: {len(merged_paths)} 条路径已写入。")
-        except Exception as e:
-            print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")
+    #     grouped_results[api_name] = grouped_results.get(api_name, [])
+    #     grouped_results[api_name].extend(merged_paths)
+    #     if is_file_too_large(save_path, max_size_mb=1024):
+    #         j+=1
+    #         save_path = f"../documentation/arg_space/{lib_name}_arg_space_{j}.json"
+    #     try:
+    #         with open(save_path, "w", encoding="utf-8") as f:
+    #             json.dump(grouped_results, f, indent=4, ensure_ascii=False)
+    #         print(f"[💾 Saved] {api_name}: {len(merged_paths)} 条路径已写入。")
+    #     except Exception as e:
+    #         print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")
 
-    print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
+    # print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
 
 
 
