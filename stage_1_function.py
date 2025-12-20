@@ -686,12 +686,21 @@ def read_json_api(api_name, file_path, read_mode):
             return data[api_name] 
 
     elif read_mode == "arg_space":
-        path = file_path+f'{lib_name}_arg_space.json'
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name]
-
+        j = 0
+        path = file_path+f'{lib_name}_arg_space_{j}.json'
+        while True: 
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if api_name in data:
+                return data[api_name]
+            else:
+                j += 1
+                new_path = file_path+f'{lib_name}_arg_space_{j}.json'
+                with open(new_path, "r", encoding="utf-8") as f:
+                    new_data = json.load(f)
+                return new_data[api_name]
+            if j > 20:
+                break
     elif read_mode == "src_code":
         path = file_path+f'{lib_name}_api_sources.json'
         with open(path, "r", encoding="utf-8") as f:

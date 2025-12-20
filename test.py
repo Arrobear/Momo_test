@@ -4,20 +4,18 @@ from generate_prompt import *
 from generate_prompt import *
 from stage_2_function import *
 
-constraints = [
-                    "input.shape[1] == weight.shape[1]",
-                    "input.dtype == weight.dtype"
-                ]
+# constraints = [
+#                     "input.shape[1] == weight.shape[1]",
+#                     "input.dtype == weight.dtype"
+#                 ]
 
-combo = {
-                    "input": "(torch.randn((8, 16, 256,), dtype=torch.float32) + 1j * torch.randn((8, 16, 256,), dtype=torch.float32)).to(dtype=torch.complex64)",
-                    "weight": "(torch.randn((16, 16, 256,), dtype=torch.float32) + 1j * torch.randn((16, 16, 256,), dtype=torch.float32)).to(dtype=torch.complex64)"
-                }
-
-
-print(check_constraints(combo, constraints))
+# combo = {
+#                     "input": "(torch.randn((8, 16, 256,), dtype=torch.float32) + 1j * torch.randn((8, 16, 256,), dtype=torch.float32)).to(dtype=torch.complex64)",
+#                     "weight": "(torch.randn((16, 16, 256,), dtype=torch.float32) + 1j * torch.randn((16, 16, 256,), dtype=torch.float32)).to(dtype=torch.complex64)"
+#                 }
 
 
+# print(check_constraints(combo, constraints))
 
 
 
@@ -26,25 +24,23 @@ print(check_constraints(combo, constraints))
 
 
 
-# api_names = read_file(f"/home/chaoni/haoyahui/documentation/{lib_name}_APIdef.txt")
-# length_api_names = len(api_names)
-# k = 0
-# for i in range(length_api_names):
-#     api_inputs = []
-#     print(i)
-#     api_name = "torch.nn.functional.conv_transpose2d"
-#     torch.nn.functional.softsign
-#     arg_combinations = read_json_api(api_name=api_name, file_path=f"/home/chaoni/haoyahui/documentation/arg_combinations/", read_mode="combination")
-#     # api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
-#     # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
-#     # conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
-#     arg_spaces = read_json_api(api_name=api_name, file_path=f"/home/chaoni/haoyahui/documentation/arg_space/", read_mode="arg_space")
-#     print(arg_combinations)
-#     print(arg_spaces)
-#     k = k + len(arg_combinations) + len(arg_spaces)
-#     print(k)
-#     if i == 0:
-#         break
+
+
+api_names = read_file(f"/home/chaoni/haoyahui/documentation/{lib_name}_APIdef.txt")
+length_api_names = len(api_names)
+k = 0
+for i in range(length_api_names):
+    api_inputs = []
+    print(i)
+    api_name = api_names[i]
+    arg_combinations = read_json_api(api_name=api_name, file_path=f"/home/chaoni/haoyahui/documentation/arg_combinations/", read_mode="combination")
+    # api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
+    # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+    # conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+    arg_spaces = read_json_api(api_name=api_name, file_path=f"/home/chaoni/haoyahui/documentation/arg_space/", read_mode="arg_space")
+
+    k = k + len(arg_combinations) * len(arg_spaces)
+    print(k)
 # print(k)
 # api_name =  "torch.index_select"
 # arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")

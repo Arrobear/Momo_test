@@ -221,7 +221,7 @@ def generate_api_boundary(api_names):
         # 根据lib_name生成不同的输入
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
-        path = f'/home/chaoni/haoyahui/documentation/api_input/{lib_name}_inputs_{j}.json'
+        path = f'/home/chaoni/haoyahui/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
         length_api_names = len(api_names)
         for i in range(length_api_names):
             
@@ -266,7 +266,7 @@ def generate_api_boundary(api_names):
 
                             # 根据api_input_boundary生成测试输入
                             # print("________________________________________________________________")
-                            print(api_boundary)
+                            # print(api_boundary)
                             # 将api_boundary转换为字典形式
                             # api_boundary = json.loads(api_boundary_str)
                             # api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary, model, tokenizer)
@@ -276,15 +276,15 @@ def generate_api_boundary(api_names):
                             api_inputs.append(new_api_input_boundary)
                     
 
-            #存储至json
+                #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
                 path = f'/home/chaoni/haoyahui/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
                 save_api_inputs(api_name, api_inputs, path)
             else:
                 save_api_inputs(api_name, api_inputs, path)
-            print(f"已完成{api_name}的API boundary生成, 进度"+str(i)+"/"+str(len(api_names)))
-            if i == 50:
+            print(f"已完成{api_name}的API组合{str(arg_combinations.index(arg_combination) + 1)}boundary生成, 进度"+str(i)+"/"+str(len(api_names)))
+            if i == 99:
                 break
 
 
