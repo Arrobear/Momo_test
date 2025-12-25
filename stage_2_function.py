@@ -1040,6 +1040,7 @@ def torch_enumerate_python_paths(json_path: str, api_name: str):
 
     api_data = all_results[api_name]
     paths = enumerate_python_paths_core(api_name, api_data)
+    return paths
 
 # 利用 Joern + CPG 做 C++ 层路径枚举
 def _joern_list_switches_with_order(joern: JoernShell, cpp_func_name: str):
@@ -1296,20 +1297,29 @@ def merge_python_cpp_paths(py_paths: list, cpp_paths: list, api_name: str):
             ptype = py_p.get("path_type", "")
             py_src = py_p.get("src", ["py:unknown"])
             py_conds = py_p.get("conjuncts", [])
-
             if ptype == "return_fun":
                 # 与 C++ 层路径做笛卡尔积
-                for cpp in cpp_paths:
-                    cpp_conds = [c for c in cpp if not c.startswith("→")]
-                    cpp_exit = "return" if any("→ return" in c for c in cpp) else "raise"
+                if cpp_paths:
+                    for cpp in cpp_paths:
+                        cpp_conds = [c for c in cpp if not c.startswith("→")]
+                        cpp_exit = "return" if any("→ return" in c for c in cpp) else "raise"
+                        merged.append({
+                            "id": f"{api_name}_{path_id}",
+                            "conjuncts": py_conds + cpp_conds,
+                            "src": py_src + ["cpp:testGuards"],
+                            "path_type": cpp_exit,
+                            "complexity": len(py_conds) + len(cpp_conds)
+                        })
+                        path_id += 1
+                else:
                     merged.append({
-                        "id": f"{api_name}_{path_id}",
-                        "conjuncts": py_conds + cpp_conds,
-                        "src": py_src + ["cpp:testGuards"],
-                        "path_type": cpp_exit,
-                        "complexity": len(py_conds) + len(cpp_conds)
-                    })
-                    path_id += 1
+                    "id": f"{api_name}_{path_id}",
+                    "conjuncts": py_conds,
+                    "src": py_src,
+                    "path_type": ptype,
+                    "complexity": len(py_conds)
+                })
+                path_id += 1
             else:
                 # 直接保留 Python 路径
                 merged.append({
@@ -1335,13 +1345,14 @@ def merge_python_cpp_paths(py_paths: list, cpp_paths: list, api_name: str):
                 "complexity": len(cpp_conds)
             })
             path_id += 1
-    # print(f"[MERGE DONE] {api_name}: 合并后共 {len(merged)} 条完整路径。")
-    # for p in merged:
-    #     emoji = "✅" if p["path_type"] == "return" else "⚠️" if p["path_type"] == "raise" else "🔁"
-    #     print(f"[{p['id']}] {emoji} {p['path_type'].upper()} ({len(p['conjuncts'])} guards)")
-    #     for i, g in enumerate(p["conjuncts"], 1):
-    #         print(f"  {i}. {g}")
-    #     print("=" * 60)
+    if not merged:
+        merged.append({
+            "id": f"{api_name}_{path_id}",
+            "conjuncts": [],
+            "src": [],
+            "path_type": "return",
+            "complexity": 0
+        })
 
     return merged
 
@@ -1474,43 +1485,45 @@ if __name__ == "__main__":
 
     api_names = read_file(api_def_path)
     # 生成api_guards.json 和 api_sources.json
-    generate_normalized_guards(api_names)
+    # generate_normalized_guards(api_names)
 
 
     # os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    # if os.path.exists(save_path):
-    #     with open(save_path, "r", encoding="utf-8") as f:
-    #         grouped_results = json.load(f)
-    # else:
-    #     grouped_results = {}
+    if os.path.exists(save_path):
+        with open(save_path, "r", encoding="utf-8") as f:
+            grouped_results = json.load(f)
+    else:
+        grouped_results = {}
 
-    # for api_name in api_names:
-    #     if api_name in grouped_results:
-    #         print(f"[⏭️ Skip] {api_name} 已存在于结果中，跳过。")
-    #         continue
+    for api_name in api_names:
+        if api_name in grouped_results:
+            print(f"[⏭️ Skip] {api_name} 已存在于结果中，跳过。")
+            continue
 
-    #     ppaths = torch_enumerate_python_paths(f"./documentation/api_guards/{lib_name}_api_guards.json", api_name)
-    #     cpaths = torch_enumerate_cpp_paths(api_name)
-    #     merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
+        ppaths = torch_enumerate_python_paths(f"../documentation/api_guards/{lib_name}_api_guards.json", api_name)
+        cpaths = torch_enumerate_cpp_paths(api_name)
+        merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
 
-    #     grouped_results[api_name] = grouped_results.get(api_name, [])
-    #     grouped_results[api_name].extend(merged_paths)
-    #     if is_file_too_large(save_path, max_size_mb=1024):
-    #         j+=1
-    #         save_path = f"../documentation/arg_space/{lib_name}_arg_space_{j}.json"
-    #     try:
-    #         with open(save_path, "w", encoding="utf-8") as f:
-    #             json.dump(grouped_results, f, indent=4, ensure_ascii=False)
-    #         print(f"[💾 Saved] {api_name}: {len(merged_paths)} 条路径已写入。")
-    #     except Exception as e:
-    #         print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")
+        grouped_results[api_name] = grouped_results.get(api_name, [])
+        grouped_results[api_name].extend(merged_paths)
+        if is_file_too_large(save_path, max_size_mb=512):
+            j+=1
+            save_path = f"../documentation/arg_space/{lib_name}_arg_space_{j}.json"
+        try:
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(grouped_results, f, indent=4, ensure_ascii=False)
+            print(f"[💾 Saved] {api_name}: {len(merged_paths)} 条路径已写入。")
+        except Exception as e:
+            print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")
 
-    # print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
+    print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
 
-
-
-
+# api_name = "torch.nn.functional.cosine_embedding_loss"
+# ppaths = torch_enumerate_python_paths(f"../documentation/api_guards/{lib_name}_api_guards.json", api_name)
+# cpaths = torch_enumerate_cpp_paths(api_name)
+# merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
+# print(merged_paths)
 
 
 
