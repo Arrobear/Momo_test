@@ -26,6 +26,9 @@ import gc
 import psutil
 import traceback
 from z3 import *
+from itertools import product
+
+
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"

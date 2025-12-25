@@ -431,7 +431,7 @@ def handle_output(text: str, model_path: str):
         except json.JSONDecodeError as e:
             return None
 
-
+# 从大模型输出中抽取 </think> 后的 JSON
 def extract_clean_json(text: str):
     """
     从大模型输出中抽取 </think> 后的 JSON，
@@ -474,8 +474,7 @@ def extract_clean_json(text: str):
         data["constraints"] = list(dict.fromkeys(data["constraints"]))
 
     return data
-
-
+# 使用大括号平衡算法提取最早闭合的 JSON。
 def balance_json_braces(fragment: str) -> str:
     """
     使用大括号平衡算法提取最早闭合的 JSON。
@@ -501,7 +500,7 @@ def balance_json_braces(fragment: str) -> str:
     else:
         return fragment[:end_index + 1]
 
-
+# 去掉 JSON 后的多余文本，只保留到最后一个大括号。
 def trim_after_last_brace(s: str) -> str:
     """
     去掉 JSON 后的多余文本，只保留到最后一个大括号。
@@ -511,7 +510,7 @@ def trim_after_last_brace(s: str) -> str:
         return s[:last + 1]
     return s
 
-
+# 强制修复 JSON：用于 json.loads() 初次失败的情况。
 def force_fix_json(s: str) -> str:
     """
     强制修复 JSON：用于 json.loads() 初次失败的情况。
@@ -534,24 +533,6 @@ def force_fix_json(s: str) -> str:
 
 # 封装不同模型的输入输出模式 
 def generate_input(prompt, tokenizer, model):
-
-    # model_path_list = [
-    #     "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
-    #     "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
-    #     "/home/chaoni/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
-    # ]
-
-    # if model_path not in model_path_list:
-    
-    #     inputs = tokenizer(
-    #         prompt,
-    #         return_tensors="pt",
-    #         truncation=True,
-    #         max_length=4096,
-    #         padding=True
-    #     )
-    # else:
-    # print(111111111111111111)
     inputs = tokenizer.apply_chat_template(
         prompt,
         return_tensors="pt",
@@ -563,22 +544,6 @@ def generate_input(prompt, tokenizer, model):
     return inputs
 
 def generate_output(inputs, model, tokenizer):
-    # model_path_list = [
-    #     "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct",
-    #     "/nasdata/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
-    # ]
-
-    # if model_path not in model_path_list:
-    #     outputs = model.generate(
-    #         **inputs,
-    #         max_new_tokens=2048,  # 可以更大
-    #         do_sample=False,      # 启用采样
-    #         temperature=1.0,     # 增加多样性
-    #         top_p=1.0,
-    #         eos_token_id=tokenizer.eos_token_id,
-    #         pad_token_id=tokenizer.pad_token_id
-    #     )
-    # else:
     outputs = model.generate(
         inputs,
         max_new_tokens=2048,  # 可以更大
@@ -718,6 +683,23 @@ def read_json_api(api_name, file_path, read_mode):
             data = json.load(f)
         if api_name in data:
             return data[api_name] 
+
+    elif read_mode == "cut_combination":
+        j = 0
+        path = file_path+f'{lib_name}_cut_combinations_{j}.json'
+        while True:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if api_name in data:
+                return data[api_name]  # 二维数组
+            else:
+                j += 1
+                new_path = file_path+f'{lib_name}_combinations_{j}.json'
+                with open(new_path, "r", encoding="utf-8") as f:
+                    new_data = json.load(f)
+                return new_data[api_name]
+            if j > 20:
+                break
     else:
         return None
 
@@ -970,7 +952,6 @@ def parse_tensor_expr(expr: str):
 
     return meta
 
-
 # -------------------------------------------------------
 # 2. Convert parsed meta to Z3 objects
 # -------------------------------------------------------
@@ -982,7 +963,6 @@ def meta_to_z3(meta):
     z["dtype"] = StringVal(meta.get("dtype","unknown"))
     z["defined"] = BoolVal(meta.get("defined", True))
     return z
-
 
 # -------------------------------------------------------
 # 3. Basic expression parser (same as before)
@@ -1021,7 +1001,6 @@ def parse_basic_expr(expr, env):
 
     return None
 
-
 # -------------------------------------------------------
 # 4. Constraint parser: string → Z3
 # -------------------------------------------------------
@@ -1057,7 +1036,6 @@ def parse_constraint_to_z3(cstr, env):
             return mapping[op](lhs,rhs)
 
     raise ValueError(f"Unsupported constraint: {cstr}")
-
 
 # -------------------------------------------------------
 # 5. main: check_constraints()
@@ -1160,34 +1138,34 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
     return new_combos
 
 
-test_bundary = {
-"params": {
-"input": {
-"type": "Tensor",
-"shape_min": [1, 1, 1],
-"shape_max": [128, 4096, 65536],
-"dtypes": ["torch.float16", "torch.bfloat16", "torch.float32", "torch.float64", "torch.complex64", "torch.complex128"]
-},
-"dim": {
-"type": "int",
-"min": 0,
-"max": 3
-},
-"index": {
-"type": "Tensor",
-"shape_min": [1],
-"shape_max": [4096],
-"dtypes": ["torch.int32", "torch.int64"]
-}
-},
-"constraints": [
-"input.dtype == index.dtype",
-"input.dim() >= 1",
-"index.shape[0] >= 1",
-"dim >= 0 and dim < input.dim()",
-"index.shape[0] == input.shape[dim]"
-]
-}
+# test_bundary = {
+# "params": {
+# "input": {
+# "type": "Tensor",
+# "shape_min": [1, 1, 1],
+# "shape_max": [128, 4096, 65536],
+# "dtypes": ["torch.float16", "torch.bfloat16", "torch.float32", "torch.float64", "torch.complex64", "torch.complex128"]
+# },
+# "dim": {
+# "type": "int",
+# "min": 0,
+# "max": 3
+# },
+# "index": {
+# "type": "Tensor",
+# "shape_min": [1],
+# "shape_max": [4096],
+# "dtypes": ["torch.int32", "torch.int64"]
+# }
+# },
+# "constraints": [
+# "input.dtype == index.dtype",
+# "input.dim() >= 1",
+# "index.shape[0] >= 1",
+# "dim >= 0 and dim < input.dim()",
+# "index.shape[0] == input.shape[dim]"
+# ]
+# }
 
 # a = generate_test_inputs_from_api_boundaries(api_name = "1", api_boundaries = test_bundary, model=None, tokenizer=None)
 # for i in a:
@@ -1294,3 +1272,139 @@ def execute_api_template(run_api_func, test_inputs, log_path="error_log.json",
         print(f"  {k.upper():12s}: {len(v)} cases")
 
     return results
+
+
+def keep_min_max_per_pattern(arg_combinations, error_combinations, filter_params):
+    """
+    对 filter_params 的存在性模式做覆盖。
+    每个模式最多保留2个组合（参数数目最小 & 最大）。
+    返回扁平的组合列表（去重）。
+    """
+    filter_params = list(filter_params)  # 固定顺序
+    error_set = {tuple(c) for c in error_combinations or []}
+
+    # 预过滤合法组合
+    valid = [c for c in arg_combinations if tuple(c) not in error_set]
+
+    # pattern(tuple[bool]) -> (min_size, min_comb), (max_size, max_comb)
+    best = {}
+
+    def pattern_of(cset):
+        return tuple(p in cset for p in filter_params)
+
+    for comb in valid:
+        cset = set(comb)
+        pat = pattern_of(cset)
+        size = len(cset)
+
+        if pat not in best:
+            best[pat] = {
+                "min": (size, comb),
+                "max": (size, comb)
+            }
+        else:
+            if size < best[pat]["min"][0]:
+                best[pat]["min"] = (size, comb)
+            if size > best[pat]["max"][0]:
+                best[pat]["max"] = (size, comb)
+
+    # 扁平化 + 去重（保持首次出现顺序）
+    result = []
+    seen = set()
+
+    for pat in product([False, True], repeat=len(filter_params)):
+        if pat not in best:
+            continue
+
+        min_comb = best[pat]["min"][1]
+        max_comb = best[pat]["max"][1]
+
+        for c in (min_comb, max_comb):
+            t = tuple(c)
+            if t not in seen:
+                seen.add(t)
+                result.append(c)
+
+    return result
+
+
+# 利用arg_space中的onjuncts 对combinations进行剪枝 → cut_combinations
+
+def cut_combinations(api_names):
+
+    # 从 conjuncts 提取依赖参数
+    def extract_filter_params(conjuncts, all_param):
+        filter_params = set()
+        for conjunct in conjuncts:
+            for param in all_param:
+                if param in conjunct:
+                    filter_params.add(param)
+        return filter_params
+
+    if lib_name == "torch":
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        j = 0
+        path = f'/home/chaoni/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json'
+        length_api_names = len(api_names)
+        for i in range(0, length_api_names):
+            api_name = filter_samenames(i, api_names[i], api_names)
+            condition = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+            # print(condition)
+            if not condition:
+                print(11111111111111111111)
+                continue
+            all_param = []
+            for key in condition["Parameter type"]:
+                all_param.append(key)
+            arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
+            error_combinations = read_json_api(api_name=api_names, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+            arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
+            if error_combinations is None:
+                error_combinations = []
+        
+            cut_combination = []
+
+            for arg_space in arg_spaces:
+                space_id = arg_space.get("id")
+                conjuncts = arg_space.get("conjuncts", [])
+
+                # 1. 提取该 space 相关的参数
+                filter_params = extract_filter_params(conjuncts, all_param)
+
+                space_combinations = keep_min_max_per_pattern(
+                    arg_combinations=arg_combinations,
+                    error_combinations=error_combinations,
+                    filter_params=filter_params
+                )
+
+                if space_combinations:
+                    cut_combination.append({
+                        "id": space_id,
+                        "combinations": space_combinations
+                    })
+                #存储至json
+            if is_file_too_large(path, max_size_mb=1000):
+                j+=1
+                path = f'/home/chaoni/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json'
+                save_api_inputs(api_name, cut_combination, path)
+            else:
+                save_api_inputs(api_name, cut_combination, path)
+
+            print(f"进度"+str(i)+"/"+str(len(api_names)))
+            # if i == 0:
+            # break
+
+
+    elif lib_name == "tf":
+        pass
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        # prompt = generate_prompt_3(api_names)
+        # 将输入存入json文件
+
+    # 添加新的深度学习库
+    else:
+        pass
+
+    return

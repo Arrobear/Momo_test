@@ -29,19 +29,20 @@ from stage_2_function import *
 api_names = read_file(f"/home/chaoni/haoyahui/documentation/{lib_name}_APIdef.txt")
 length_api_names = len(api_names)
 k = 0
+l = 0
 for i in range(length_api_names):
     api_inputs = []
     print(i)
-    api_name = api_names[i]
+    api_name = filter_samenames(i, api_names[i], api_names)
     arg_combinations = read_json_api(api_name=api_name, file_path=f"/home/chaoni/haoyahui/documentation/arg_combinations/", read_mode="combination")
     # api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
     # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
     # conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
-    arg_spaces = read_json_api(api_name=api_name, file_path=f"/home/chaoni/haoyahui/documentation/arg_space/", read_mode="arg_space")
+    arg_spaces = read_json_api(api_name=api_names[i], file_path=f"/home/chaoni/haoyahui/documentation/arg_space/", read_mode="arg_space")
 
-    k = k + len(arg_combinations) * len(arg_spaces)
-    print(k)
-# print(k)
+    k = k + len(arg_combinations)*len(arg_spaces)
+    print("k:"+str(k))
+
 # api_name =  "torch.index_select"
 # arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")
 # api_code = read_json_api(api_name=api_name, file_path=f"./documentation/api_src_code/", read_mode="src_code")

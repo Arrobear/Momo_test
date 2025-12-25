@@ -205,7 +205,86 @@ def check_condition_filter(api_names):
 #------------------------------------
 # 生成api boundary
 #------------------------------------
+# 未剪枝组合
+# def generate_api_boundary(api_names):
 
+#     with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+#         api_defs = [line.strip() for line in file]
+#     api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
+
+#     # 加载LLM模型
+#     tokenizer = AutoTokenizer.from_pretrained(model_path)
+#     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+
+
+#     if lib_name == "torch":
+#         # 根据lib_name生成不同的输入
+#         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+#         j = 0
+#         path = f'/home/chaoni/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+#         length_api_names = len(api_names)
+#         for i in range(0, length_api_names):
+            
+#             api_inputs = []
+#             api_name = filter_samenames(i, api_names[i], api_names)
+#             arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="cut_combination")
+#             # arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
+#             api_code = read_json_api(api_name=api_names[i], file_path=f"../documentation/api_src_code/", read_mode="src_code")
+#             # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+#             conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+#             arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
+#             if error_combinations is None:
+#                 error_combinations = []
+#             if arg_spaces is None:
+#                 add_log("/home/chaoni/haoyahui/Momo_test/",api_name)
+#             length_arg_combinations = len(arg_combinations)
+
+#             for arg_combination in arg_combinations:
+#                 combinations = arg_combination["combinations"]
+#                 for arg_sp in arg_spaces:
+#                     if arg_sp["id"] == arg_combination["id"]:
+#                         arg_space = arg_sp
+#                 for comb in combinations:
+#                 # if arg_combination in error_combinations:
+#                 #     continue
+#                     length_arg_spaces = len(arg_spaces)
+#                     if arg_spaces:
+#                         for arg_space in arg_spaces:
+#                             print("第"+str(i+1)+"/"+str(length_api_names)+"个API"+api_name+"，第"+ 
+#                                 str(arg_combinations.index(arg_combination) + 1)+"/"+ str(length_arg_combinations)+"个参数组合，第"+ 
+#                                 str(1+arg_spaces.index(arg_space))+"/"+ str(length_arg_spaces)+"个参数空间")
+#                             path_type = arg_space["path_type"]
+#                             prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
+#                             if tokenizer.pad_token is None:
+#                                 tokenizer.pad_token = tokenizer.eos_token  
+#                             inputs = generate_input(prompt, tokenizer, model)
+
+#                             # 把inputs放到模型参数所在设备
+#                             inputs = inputs.to(next(model.parameters()).device)
+
+#                             outputs = generate_output(inputs, model, tokenizer)
+#                             # 解码输出
+#                             outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+#                             # print(outputs_text)
+#                             api_boundary = extract_clean_json(outputs_text)
+
+#                             new_api_input_boundary = {"path_type": path_type, "api_input": api_boundary}
+#                             api_inputs.append(new_api_input_boundary)
+                    
+
+#                 #存储至json
+#             if is_file_too_large(path, max_size_mb=1000):
+#                 j+=1
+#                 path = f'/home/chaoni/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+#                 save_api_inputs(api_name, api_inputs, path)
+#             else:
+#                 save_api_inputs(api_name, api_inputs, path)
+#             print(f"已完成{api_name}的API组合{str(arg_combinations.index(arg_combination) + 1)}boundary生成, 进度"+str(i)+"/"+str(len(api_names)))
+#             # if i == 99:
+#             #     break
+
+
+# 剪枝后组合
 def generate_api_boundary(api_names):
 
     with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
@@ -221,71 +300,63 @@ def generate_api_boundary(api_names):
         # 根据lib_name生成不同的输入
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
-        path = f'/home/chaoni/haoyahui/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
+        path = f'/home/chaoni/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
         length_api_names = len(api_names)
-        for i in range(length_api_names):
+        for i in range(0, length_api_names):
             
             api_inputs = []
-            api_name = api_names[i]
-            arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
-            api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
-            error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+            api_name = filter_samenames(i, api_names[i], api_names)
+            arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="cut_combination")
+            # arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
+            api_code = read_json_api(api_name=api_names[i], file_path=f"../documentation/api_src_code/", read_mode="src_code")
+            # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
             conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
-            arg_spaces = read_json_api(api_name=api_name, file_path=f"../documentation/arg_space/", read_mode="arg_space")
-            if error_combinations is None:
-                error_combinations = []
+            arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
+            # if error_combinations is None:
+            #     error_combinations = []
             if arg_spaces is None:
                 add_log("/home/chaoni/haoyahui/Momo_test/",api_name)
-            length_arg_combinations = len(arg_combinations)
-
+            
+            length_arg_spaces = len(arg_combinations)
             for arg_combination in arg_combinations:
+                combinations = arg_combination["combinations"]
+                length_combinations = len(combinations)
+                for arg_sp in arg_spaces:
+                    if arg_sp["id"] == arg_combination["id"]:
+                        arg_space = arg_sp
+                for comb in combinations:
+                    
+                    print("第"+str(i+1)+"/"+str(length_api_names)+"个API"+api_name+"，第"+ 
+                                str(combinations.index(comb) + 1)+"/"+ str(length_combinations)+"个参数组合，第"+ 
+                                str(1+arg_combinations.index(arg_combination))+"/"+ str(length_arg_spaces)+"个参数空间")
+                    path_type = arg_space["path_type"]
+                    prompt = generate_prompt_3(api_name, comb, api_code, arg_space, conditions["Parameter type"])
+                    if tokenizer.pad_token is None:
+                        tokenizer.pad_token = tokenizer.eos_token  
+                    inputs = generate_input(prompt, tokenizer, model)
 
-                if arg_combination in error_combinations:
-                    continue
-                else:
-                    length_arg_spaces = len(arg_spaces)
-                    if arg_spaces:
-                        for arg_space in arg_spaces:
-                            print("第"+str(i+1)+"/"+str(length_api_names)+"个API"+api_name+"，第"+ 
-                                str(arg_combinations.index(arg_combination) + 1)+"/"+ str(length_arg_combinations)+"个参数组合，第"+ 
-                                str(1+arg_spaces.index(arg_space))+"/"+ str(length_arg_spaces)+"个参数空间")
-                            path_type = arg_space["path_type"]
-                            prompt = generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions["Parameter type"])
-                            if tokenizer.pad_token is None:
-                                tokenizer.pad_token = tokenizer.eos_token  
-                            inputs = generate_input(prompt, tokenizer, model)
+                    # 把inputs放到模型参数所在设备
+                    inputs = inputs.to(next(model.parameters()).device)
+                    outputs = generate_output(inputs, model, tokenizer)
+                    # 解码输出
+                    outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    # print(outputs_text)
+                    api_boundary = extract_clean_json(outputs_text)
 
-                            # 把inputs放到模型参数所在设备
-                            inputs = inputs.to(next(model.parameters()).device)
-
-                            outputs = generate_output(inputs, model, tokenizer)
-                            # 解码输出
-                            outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-                            # print(outputs_text)
-                            api_boundary = extract_clean_json(outputs_text)
-
-                            # 根据api_input_boundary生成测试输入
-                            # print("________________________________________________________________")
-                            # print(api_boundary)
-                            # 将api_boundary转换为字典形式
-                            # api_boundary = json.loads(api_boundary_str)
-                            # api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary, model, tokenizer)
-                            
-
-                            new_api_input_boundary = {"path_type": path_type, "api_input": api_boundary}
-                            api_inputs.append(new_api_input_boundary)
+                    new_api_input_boundary = {"path_type": path_type, "api_input": api_boundary}
+                    api_inputs.append(new_api_input_boundary)
                     
 
                 #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = f'/home/chaoni/haoyahui/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
+                path = f'/home/chaoni/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
                 save_api_inputs(api_name, api_inputs, path)
             else:
                 save_api_inputs(api_name, api_inputs, path)
             print(f"已完成{api_name}的API组合{str(arg_combinations.index(arg_combination) + 1)}boundary生成, 进度"+str(i)+"/"+str(len(api_names)))
-            if i == 99:
-                break
+            # if i == 99:
+            #     break
 
 
     elif lib_name == "tf":
