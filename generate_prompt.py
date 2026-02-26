@@ -179,10 +179,9 @@ def generate_prompt_2(fun_string, args, api_def, api_doc):
 
 
 
-def generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions):
+def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
     #补充api文档中的条件用于生成输入
-    py_code = api_code["python"]["code"]
-    cpp_code = api_code["cpp"]["code"]
+
     arg_path = arg_space["conjuncts"]
     arg_intro = {}
     for arg in arg_combination:
@@ -209,38 +208,26 @@ def generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions
     A parameter space is shown as follows:
     {arg_path}
 
-    \n(3) Function source code
-    The function source code includes extractable Python encapsulation layer and CPP implementation layer code.
-    Source Code is as follows:
-    Python:
-    {py_code}
-    CPP:
-    {cpp_code}
-
     \n---
     \n3. Your Tasks:
-    Based on the three conditions of Parameter Combination, Parameter space, and Function source code above,Your task is to generate a normalized parameter space schema describing how each argument of the API behaves.
+    Task 1: Analyze and Extract Parameters ("params")
+    - Read the "(1) Parameter Combination" section.
+    - For each argument, define its `type`, `min/max` (for numbers), `choices` (for strings/enums), and tensor specifications.
+    - Tensor Shapes: Parse descriptions like `(minibatch, in_channels, iW)` to generate reasonable `shape_min` and `shape_max`.
+    - Complex/Unknown Types: If a parameter cannot be easily defined by simple types or choices (e.g., a custom object or specific generator), mark its type as "complex".
 
-    Your responsibilities:
-    Focus only on the parameters in the Parameter Combination (from Parameter Combination).
-
-    Determine parameter types (Tensor, int, float, bool, str, or optional).
-
-    For Tensor parameters: infer the minimum and maximum shape values (shape_min, shape_max) based on provided examples or common conventions.
-
-    For string parameters (str):Identify possible categorical values (choices) such as "mean", "sum", "none", "reflect", "zeros", etc.
-
-    For scalar parameters (int, float, bool): Provide their valid value range (min, max) or possible values if enumerable.
-    
-    Infer possible dtypes (e.g. torch.float32, torch.float64, torch.complex64).
-
-    Detect logical constraints between parameters, such as:shape consistency (input.shape[1] == weight.shape[1])、dtype consistency (input.dtype == weight.dtype)、divisibility (Cin % groups == 0)、ordering or boundary rules (kernel_size <= input_length)
-
-    Output only factual, structured information.
-    Do not invent nonexistent parameters.
-    If something is uncertain, use a reasonable but concise estimate (e.g. [1, 1024] for lengths).
-
-    Your output must capture the essential constraints and boundaries necessary for generating test inputs, not the actual test cases.
+    Task 2: Convert the provided logical constraints into executable Python statements, ("constraints")
+    - Read the "(2) Parameter space" section.
+    - Validation: The output string MUST be valid Python syntax that can be evaluated using `eval()` given a dictionary of variables.
+    - Variable Name Alignment: Strip C++ specific naming conventions (e.g., `input_` must become `input`) so they strictly match the keys defined in Task 1.
+    - Safe Attribute Access: For Optional parameters, always check for `None` before accessing attributes (e.g., `bias is None or bias.dtype == input.dtype`).
+    - C++ to Python Translation Rules:
+        * `!tensor.defined()` -> `tensor is None`
+        * `tensor.defined()` -> `tensor is not None`
+        * `tensor.dim()` -> `tensor.ndim`
+        * `tensor.sizes()` -> `tensor.shape`
+        * `at::isComplexType(...)` -> `tensor.dtype in [torch.complex64, torch.complex128]`
+        
     \n---
     \n4.Output Format:
     {"{"}
@@ -257,17 +244,15 @@ def generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions
         ...
     {"}"},
     "constraints": [
-        "<logical_expression_1>",
-        "<logical_expression_2>",
+        "<python_executable_logical_expression_1>",
+        "<python_executable_logical_expression_2>",
         ...
     ]
     {"}"}
     Rules:
-        Only generate the parameters in the Parameter Combination
-        Output must be valid JSON and syntactically correct.
-        Include all relevant fields for each parameter type.
-        Do not invent extra fields or comments.
-        For unknown values, infer conservative defaults (e.g. "choices": ["default"]).
+        1. Only generate the parameters in the Parameter Combination.
+        2. Output MUST be a single valid JSON object and syntactically correct.
+        3. DO NOT output any markdown blocks (like ```json), explanations, or conversational text. Return ONLY the raw JSON string.
 
     \n---
     \n5.Examples:
@@ -297,12 +282,10 @@ def generate_prompt_3(api_name, arg_combination, api_code, arg_space, conditions
     {"}"},
     "constraints": [
         "mode == 'constant' or value == 0.0",
-        "len(pad) % 2 == 0",
-        "input.dtype in ['torch.float32', 'torch.float64']"
+        "len(pad) % 2 == 0", 
+        "input.dtype in [torch.float32, torch.float64]"
     ]
     {"}"}
-
-
 
     '''
     system_prompt = '''

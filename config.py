@@ -28,14 +28,16 @@ import traceback
 from z3 import *
 from itertools import product
 
-
+root_path = "/nasdata/chaoni"
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
 # model_path = "/nasdata/haoyahui/Model/codellama-13b"
-model_path = "/home/chaoni/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
+model_path = root_path + "/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
+
+
 
 lib_name = "torch"  # 库名称
 # test.cpp

@@ -435,7 +435,7 @@ def handle_output(text: str, model_path: str):
 def extract_clean_json(text: str):
     """
     从大模型输出中抽取 </think> 后的 JSON，
-    自动补大括号、去除重复字段、修复常见错误，返回最终解析出的 dict。
+    自动补大括号、去除重复字段、修复常见错误（含 Python 关键词替换），返回最终解析出的 dict。
     """
 
     end_tag = "</think>"
@@ -452,24 +452,32 @@ def extract_clean_json(text: str):
 
     fragment = after[start:]
 
-    # 3. 使用大括号平衡提取完整 JSON 字符串
+    # 3. 使用大括号平衡提取完整 JSON 字符串 (假设你已有 balance_json_braces 函数)
     json_str = balance_json_braces(fragment)
 
-    # 4. 强制去掉末尾非 JSON 内容
+    # 4. 强制去掉末尾非 JSON 内容 (假设你已有 trim_after_last_brace 函数)
     json_str = trim_after_last_brace(json_str)
 
-    # 5. 尝试解析 JSON
+    # ==========================================
+    # [新增] 5. 预处理：修复 Python 风格的关键字
+    # 使用 \b 确保是全词匹配，避免替换掉包含 None/True/False 的普通单词
+    # ==========================================
+    json_str = re.sub(r'\bNone\b', 'null', json_str)
+    json_str = re.sub(r'\bTrue\b', 'true', json_str)
+    json_str = re.sub(r'\bFalse\b', 'false', json_str)
+
+    # 6. 尝试解析 JSON
     try:
         data = json.loads(json_str)
     except Exception:
-        # 如果解析失败，尝试增强修复
+        # 如果解析失败，尝试增强修复 (假设你已有 force_fix_json 函数)
         fixed = force_fix_json(json_str)
         try:
             data = json.loads(fixed)
         except Exception:
             return None
 
-    # 6. constraints 去重（如果存在）
+    # 7. constraints 去重（如果存在）
     if isinstance(data, dict) and "constraints" in data:
         data["constraints"] = list(dict.fromkeys(data["constraints"]))
 
@@ -1138,39 +1146,6 @@ def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=Non
     return new_combos
 
 
-# test_bundary = {
-# "params": {
-# "input": {
-# "type": "Tensor",
-# "shape_min": [1, 1, 1],
-# "shape_max": [128, 4096, 65536],
-# "dtypes": ["torch.float16", "torch.bfloat16", "torch.float32", "torch.float64", "torch.complex64", "torch.complex128"]
-# },
-# "dim": {
-# "type": "int",
-# "min": 0,
-# "max": 3
-# },
-# "index": {
-# "type": "Tensor",
-# "shape_min": [1],
-# "shape_max": [4096],
-# "dtypes": ["torch.int32", "torch.int64"]
-# }
-# },
-# "constraints": [
-# "input.dtype == index.dtype",
-# "input.dim() >= 1",
-# "index.shape[0] >= 1",
-# "dim >= 0 and dim < input.dim()",
-# "index.shape[0] == input.shape[dim]"
-# ]
-# }
-
-# a = generate_test_inputs_from_api_boundaries(api_name = "1", api_boundaries = test_bundary, model=None, tokenizer=None)
-# for i in a:
-#     print(i)
-
 
 
 def convert_input_to_string(params):
@@ -1345,7 +1320,7 @@ def cut_combinations(api_names):
         # 根据lib_name生成不同的输入
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
-        path = f'/home/chaoni/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json'
+        path = root_path + f"/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json"
         length_api_names = len(api_names)
         for i in range(0, length_api_names):
             api_name = filter_samenames(i, api_names[i], api_names)
@@ -1386,7 +1361,7 @@ def cut_combinations(api_names):
                 #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = f'/home/chaoni/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json'
+                path = root_path + f"/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json"
                 save_api_inputs(api_name, cut_combination, path)
             else:
                 save_api_inputs(api_name, cut_combination, path)
