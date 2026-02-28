@@ -28,7 +28,7 @@ import traceback
 from z3 import *
 from itertools import product
 
-root_path = "/nasdata/chaoni"
+root_path = "/data/chaoni"
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"

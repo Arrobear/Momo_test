@@ -287,6 +287,55 @@ def generate_api_boundary(api_names):
     return
 
 #------------------------------------
+# 生成默认输入
+#------------------------------------
+def generate_default_inputs(api_names):
+
+    api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
+
+    # 加载LLM模型
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+    if lib_name == "torch":
+        # 根据lib_name生成不同的输入
+        # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
+        j = 0
+        path = root_path + f'/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+        length_api_names = len(api_names)
+
+        i = 0
+        while(True):
+            api_name = filter_samenames(i, api_names[i], api_names)
+            api_doc = get_doc(api_name)
+            conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+            print("第"+str(i+1)+"/"+str(length_api_names)+"个API"+api_name)
+            prompt = generate_prompt_4(api_name, api_doc, conditions["Parameter type"])
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token  
+            inputs = generate_input(prompt, tokenizer, model)
+
+            # 把inputs放到模型参数所在设备
+            inputs = inputs.to(next(model.parameters()).device)
+            outputs = generate_output(inputs, model, tokenizer)
+            # 解码输出
+            outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            # print(outputs_text)
+            api_default_input = extract_clean_json(outputs_text)
+                    
+                #存储至json
+            if is_file_too_large(path, max_size_mb=1000):
+                j+=1
+                path = root_path + f'/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+                save_api_inputs(api_name, api_default_input, path)
+            else:
+                save_api_inputs(api_name, api_default_input, path)
+            i += 1
+            # if i > length_api_names:
+            #     break
+
+
+
+#------------------------------------
 # 生成api input
 #------------------------------------
 
