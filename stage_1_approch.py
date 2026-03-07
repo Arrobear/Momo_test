@@ -309,7 +309,7 @@ def generate_default_inputs(api_names):
             api_doc = get_doc(api_name)
             conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
             print("第"+str(i+1)+"/"+str(length_api_names)+"个API"+api_name)
-            prompt = generate_prompt_4(api_name, api_doc, conditions["Parameter type"])
+            prompt = generate_prompt_4(api_name, conditions["Parameter type"], api_doc)
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token  
             inputs = generate_input(prompt, tokenizer, model)

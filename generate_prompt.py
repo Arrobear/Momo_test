@@ -187,7 +187,7 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
     for arg in arg_combination:
         if arg in conditions:
             arg_intro[arg] = conditions[arg]
-        
+    print(arg_intro)
     ori_prompt = f'''
     \n1. Role:
         You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
@@ -200,7 +200,7 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
 
     \n(1) Parameter Combination
     Parameter combination refers to the reasonable composition of parameters when calling APIs.
-    The parameter combination with constraints for this API is as follows:
+    The following are the parameters with parameter types and default values:
     {arg_intro}
     
     \n(2) Parameter space
@@ -210,23 +210,17 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
 
     \n---
     \n3. Your Tasks:
-    Task 1: Analyze and Extract Parameters ("params")
-    - Read the "(1) Parameter Combination" section.
+    \nTask 1: Analyze and Extract Parameters ("params")
+    - Read the "(1) Parameter Combination" section, The output params item only contains the parameters in "parameter combination".
     - For each argument, define its `type`, `min/max` (for numbers), `choices` (for strings/enums), and tensor specifications.
     - Tensor Shapes: Parse descriptions like `(minibatch, in_channels, iW)` to generate reasonable `shape_min` and `shape_max`.
     - Complex/Unknown Types: If a parameter cannot be easily defined by simple types or choices (e.g., a custom object or specific generator), mark its type as "complex".
 
-    Task 2: Convert the provided logical constraints into executable Python statements, ("constraints")
+    \nTask 2: Convert the provided logical constraints into executable Python statements, ("constraints")
     - Read the "(2) Parameter space" section.
     - Validation: The output string MUST be valid Python syntax that can be evaluated using `eval()` given a dictionary of variables.
+    - If "parameter space" is empty, the constraints item is [].
     - Variable Name Alignment: Strip C++ specific naming conventions (e.g., `input_` must become `input`) so they strictly match the keys defined in Task 1.
-    - Safe Attribute Access: For Optional parameters, always check for `None` before accessing attributes (e.g., `bias is None or bias.dtype == input.dtype`).
-    - C++ to Python Translation Rules:
-        * `!tensor.defined()` -> `tensor is None`
-        * `tensor.defined()` -> `tensor is not None`
-        * `tensor.dim()` -> `tensor.ndim`
-        * `tensor.sizes()` -> `tensor.shape`
-        * `at::isComplexType(...)` -> `tensor.dtype in [torch.complex64, torch.complex128]`
         
     \n---
     \n4.Output Format:
@@ -249,11 +243,11 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
         ...
     ]
     {"}"}
-    Rules:
+    \nRules:
         1. Only generate the parameters in the Parameter Combination.
         2. Output MUST be a single valid JSON object and syntactically correct.
         3. DO NOT output any markdown blocks (like ```json), explanations, or conversational text. Return ONLY the raw JSON string.
-
+        4. Directly output JSON such as output examples. Do not modify my prompt.
     \n---
     \n5.Examples:
     Output Examples: 
@@ -299,9 +293,74 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
         ]
     # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
+def generate_prompt_4(api_name, param_name, api_doc):
+
+    ori_prompt = f'''
+    1. Role:
+        You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+    ---
+    2. Background and Context:
+        You will generate the default input of an API based on the following information.
+        Here are some API information for reference:
+        • API name:
+            {api_name}
+
+        • Parameters:
+            {param_name}
+
+        • API documentation:
+            {api_doc}
+
+    ---
+    3. Your Tasks:
+        Generate a python dictionary based on the above API name, parameters, and API documentation. The content is the default input of each parameter.
+        ---
+        Notes:
+        For parameters marked with default input in parameters, the default input is directly retrieved.
+        For optional parameters, the default input is "None".
 
 
-def generate_prompt_4(api_name, param_name, param_info, param_constraints, api_doc):
+    ---
+    4. Output Format:
+        Your final output MUST be a valid JSON object with the structure:
+        Example output:
+        {"{"}
+        "input": "None",
+        "pad": 0,
+        "mode": "constant",
+        "value": 0.0
+        {"}"}
+
+        Requirements:
+            The output must be in a dictionary format that can be stored as JSON.
+            The keys of the dictionary are the parameter names, and the values are the default inputs for those parameters.
+    ---
+    5. Examples:
+        (Example is illustrative and does NOT reflect the real parameter info.)
+
+        Example output:
+        {"{"}
+        "input": "None",
+        "pad": 0,
+        "mode": "constant",
+        "value": 0.0
+        {"}"}
+
+    '''
+
+    system_prompt = '''
+        You are an assistant who strictly follows user instructions. Response must be made only according to the following rules:\n
+        1. The answer format must be completely consistent with the output format specified by the user;\n
+        2. Prohibit autonomous extension, interpretation, or modification of user instructions.\n
+        '''
+    prompt = [
+            {"role": "system", "content": system_prompt}, 
+            {"role": "user", "content": ori_prompt}
+        ]
+    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
+    return prompt
+
+def generate_prompt_5(api_name, param_name, param_info, param_constraints, api_doc):
 
     ori_prompt = f'''
     1. Role:
@@ -446,7 +505,7 @@ def generate_prompt_4(api_name, param_name, param_info, param_constraints, api_d
     return prompt
 
 
-def generate_prompt_5(api_name, arg_signature, api_doc):
+def generate_prompt_6(api_name, arg_signature, api_doc):
 
     ori_prompt = f'''
     \n1. Role:
@@ -543,7 +602,7 @@ def generate_prompt_5(api_name, arg_signature, api_doc):
 
 
 
-def generate_prompt_6(combo, constraint):
+def generate_prompt_7(combo, constraint):
 
     ori_prompt = f"""
 1. Role:
