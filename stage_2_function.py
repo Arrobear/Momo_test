@@ -1485,7 +1485,7 @@ if __name__ == "__main__":
 
     api_names = read_file(api_def_path)
     # 生成api_guards.json 和 api_sources.json
-    # generate_normalized_guards(api_names)
+    generate_normalized_guards(api_names)
 
 
     # os.makedirs(os.path.dirname(save_path), exist_ok=True)

@@ -5,14 +5,13 @@ from stage_1_approch import *
 
 
 if __name__ == "__main__":
-  print("", end = "")
 
   #读取函数文档``
-  api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
+  api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
   print(f"共{len(api_names)}个API")
 
   # 生成过滤条件 → conditions
-  #generate_api_conditions(api_names)
+  generate_api_conditions(api_names)
    
   # 生成所有可能的组合 → arg_combinations
   # base_condition_filter(api_names)
@@ -30,7 +29,7 @@ if __name__ == "__main__":
   # generate_api_boundary(api_names)
 
   # 生成默认输入用于约束校验
-  generate_default_inputs(api_names)
+  # generate_default_inputs(api_names)
 
   # 根据boundary生成输入
   # generate_api_input(api_names)

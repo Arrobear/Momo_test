@@ -1,5 +1,6 @@
 from config import *
 from generate_prompt import *
+from generate_input import *
 '''
 **该文件内存储完成各种基本操作的函数**
 
@@ -69,73 +70,57 @@ def filter_apidocument(api_doc):
 
 
 #根据函数名获取函数的文档字符串
-def get_doc(function_name):
+def get_doc(function_name: str) -> str:
+    """
+    根据完整的API名称（如 'torch.bitwise_not' 或 'scipy.optimize.minimize'）
+    动态导入相关模块并获取其文档字符串。
     
-    if lib_name == "torch":
-        if function_name in torch_samename_data:
-            return torch_samename_data[function_name]
+    参数:
+        function_name (str): 完整的API调用路径字符串。
         
-        if function_name in ["torch.scatter", "torch.scatter_add"]:
-            return eval(filter_apidocument(eval(function_name).__doc__)).__doc__
-        if function_name.endswith("_"):
-            function_name_ = function_name[:-1]
-            try:
-                function = eval(function_name)
-                api_doc_1 = function.__doc__
-            except (AttributeError, ImportError, NameError) as e:
-                return False
-            try:
-                function = eval(function_name_)
-                api_doc_2 = function.__doc__
-            except (AttributeError, ImportError, NameError) as e:
-                return False
+    返回:
+        str: 提取到的文档字符串。如果未找到或无文档，返回相应的提示信息。
+    """
+    if not function_name or not isinstance(function_name, str):
+        return "错误：输入必须是非空的字符串。"
+
+    parts = function_name.split('.')
+    
+    # 采用“降级导入”策略：从最长的路径开始尝试导入模块
+    # 例如针对 'scipy.optimize.minimize':
+    # 第一次尝试导入 'scipy.optimize.minimize' (会抛出 ImportError，因为 minimize 是函数)
+    # 第二次尝试导入 'scipy.optimize' (成功导入) -> 然后通过 getattr 获取 minimize 属性
+    for i in range(len(parts), 0, -1):
+        module_name = '.'.join(parts[:i])
+        try:
+            # 尝试动态导入模块
+            obj = importlib.import_module(module_name)
             
-            return api_doc_1 + '\n' + api_doc_2 + '\n' + get_doc(function_name_)
-        
-        try:
-            function = eval(function_name)
-            api_doc = function.__doc__
-            if api_doc is None:
-                return False
-    
-        except (AttributeError, ImportError, NameError) as e:
-            return False
-        hash_list = ["Args:" in api_doc , 
-                     "math::" in api_doc, 
-                     "Shape:" in api_doc , 
-                     "Arguments:" in api_doc , 
-                     "-> torch.dtype" in api_doc , 
-                     "from_numpy(ndarray)" in api_doc , 
-                     "torch.moveaxis" in api_doc , 
-                     "Examples:" in api_doc ,
-                     function_name == "torch.seed",
-                     function_name =="torch.initial_seed",
-                     function_name =="torch.get_rng_state",
-                     function_name =="torch.get_num_threads",
-                     function_name =="torch.get_num_interop_threads",
-                     function_name =="torch.compiled_with_cxx11_abi",
-                     function_name =="torch.are_deterministic_algorithms_enabled"
-                     ]
-
-        if True in hash_list:
-            return api_doc
-        else:
-            func_name = filter_apidocument(api_doc)
-            if func_name is None:
-                return api_doc
-            return get_doc(func_name)          
-        
-    elif lib_name == "tf":
-        try:
-            function = eval(function_name)
-            api_doc = function.__doc__
-        except (AttributeError, ImportError, NameError) as e:
-            return False
-
-        if api_doc is None:
-            return False
-        
-        return api_doc
+            # 如果模块导入成功，依次向下获取具体的属性（类、函数、方法等）
+            for attr in parts[i:]:
+                obj = getattr(obj, attr)
+            
+            # 优先使用 inspect.getdoc() 获取清理过缩进的文档字符串
+            # 如果获取不到，尝试直接获取 __doc__ 属性
+            doc = inspect.getdoc(obj)
+            if not doc and hasattr(obj, '__doc__'):
+                doc = obj.__doc__
+                
+            if doc:
+                return doc
+            else:
+                print(f"提示：找到了API '{function_name}'，但该API没有编写文档字符串。")
+                return None
+            
+        except (ImportError, AttributeError):
+            # 如果当前层级导入失败或找不到属性，继续缩短模块路径尝试
+            continue
+        except Exception as e:
+            # 捕获库初始化时可能抛出的其他运行时异常
+            print(f"错误：在提取 '{function_name}' 时发生异常: {str(e)}")
+            return None
+    print(f"错误：无法找到API '{function_name}'。请确保输入的API名称正确，并且环境中已安装对应的第三方库。")        
+    return None
 
 
 #根据函数文档获取参数列表
@@ -465,7 +450,15 @@ def extract_clean_json(text: str):
     json_str = re.sub(r'\bNone\b', 'null', json_str)
     json_str = re.sub(r'\bTrue\b', 'true', json_str)
     json_str = re.sub(r'\bFalse\b', 'false', json_str)
-
+    pattern = r'([a-zA-Z_][a-zA-Z0-9_\.]*\s*\(.*?\))'
+        
+    def to_string_repr(match):
+        content = match.group(1)
+        # 如果已经是引号包裹的则不处理（防止嵌套破坏）
+        # 这里简单处理：将内部的引号转义，整体包上双引号
+        safe_content = content.replace('"', '\\"')
+        return f'"{safe_content}"'
+    json_str = re.sub(pattern, to_string_repr, json_str)
     # 6. 尝试解析 JSON
     try:
         data = json.loads(json_str)
@@ -581,7 +574,6 @@ def filter_samenames(i ,fun_string, api_names):
         function_name = fun_string
     return function_name
 
-
 def get_all_combinations_from_json(api_name, j):
     # path = f'C:/Users/86184/Desktop/torch_combinations.json'
     k = j
@@ -691,7 +683,21 @@ def read_json_api(api_name, file_path, read_mode):
             data = json.load(f)
         if api_name in data:
             return data[api_name] 
-
+    elif read_mode == "default_input":
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
+    elif read_mode == "inputs":
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
+    elif read_mode == "case":
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if api_name in data:
+            return data[api_name] 
     elif read_mode == "cut_combination":
         j = 0
         path = file_path+f'{lib_name}_cut_combinations_{j}.json'
@@ -755,7 +761,7 @@ def generate_complex_param(api_name, param_name, param_info, constraints, model,
     使用 LLM 生成复杂对象
     """
     api_doc = get_doc(api_name)
-    prompt = generate_prompt_4(api_name, param_name, param_info, constraints, api_doc)
+    prompt = generate_prompt_5(api_name, param_name, param_info, constraints, api_doc)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token  
     inputs = generate_input(prompt, tokenizer, model)
@@ -766,309 +772,64 @@ def generate_complex_param(api_name, param_name, param_info, constraints, model,
     outputs = generate_output(inputs, model, tokenizer)
     # 解码输出
     outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    complex_input = handle_output(outputs_text, model_path)
+    
+    complex_input = extract_clean_json(outputs_text, model_path)
     complex_input = json.loads(complex_input)
     complex_input_list = complex_input["test_values"]
     samples = [f"{param_name}={v}" for v in complex_input_list]
     return samples
 
-def generate_tensor_param_cases(param_name, param_info, max_dim_limit=256):
+
+# -------------------------------------------------------
+# 约束检查
+# -------------------------------------------------------
+# -------------------------------------------------------
+#check_constraints()
+# -------------------------------------------------------
+def check_constraints(combo_dict, constraints, default_inputs):
     """
-    为 Tensor 类型参数生成一系列覆盖性测试样本字符串。
-    ✅ 特性：
-      - 自动生成 min / mid / max 的维度组合
-      - 支持 float、int、bool、complex、bfloat16 等 dtype
-      - 自动防止超大形状
-      - 统一 dtype 解析，不再生成 torch.torch.float128 之类的错误
+    检查当前的参数组合是否满足所有约束条件。
+    遇到不合法的约束语句，默认视为满足 (True)。
     """
-    shape_min = param_info.get("shape_min", [1])
-    shape_max = param_info.get("shape_max", [3])
-    dtypes = param_info.get("dtypes", ["float32"])
-
-    # -------------------------------
-    # 1️⃣ shape 边界组合：取 min / mid / max
-    # -------------------------------
-    shape_cases = []
-    for lo, hi in zip(shape_min, shape_max):
-        lo = min(int(lo), max_dim_limit)
-        hi = min(int(hi), max_dim_limit)
-
-        if lo == hi:
-            shape_cases.append([lo])
-        else:
-            mid = (lo + hi) // 2
-            mid = min(mid, max_dim_limit)
-            shape_cases.append([lo, mid, hi])
-
-    # 所有组合
-    shape_combos = list(itertools.product(*shape_cases))
-
-    # -------------------------------
-    # 2️⃣ dtype × shape 组合生成字符串
-    # -------------------------------
-    samples = []
-    for dtype_str in dtypes:
-        # 清理 dtype 名称（可能是 "torch.float32"）
-        clean_dtype = dtype_str.split(".")[-1].strip()
-        if not hasattr(torch, clean_dtype):
-            # 避免出现 float128 / 伪类型
-            clean_dtype = "float32"
-
-        for shape in shape_combos:
-            shape_str = ", ".join(str(s) for s in shape)
-
-            # 根据 dtype 构造表达式
-            if any(k in clean_dtype for k in ["float", "half", "bfloat"]):
-                expr = f"{param_name} = torch.randn(({shape_str},), dtype=torch.{clean_dtype})"
-
-            elif any(k in clean_dtype for k in ["int", "long"]):
-                expr = f"{param_name} = torch.randint(0, 10, ({shape_str},), dtype=torch.{clean_dtype})"
-
-            elif "uint8" in clean_dtype:
-                expr = f"{param_name} = torch.randint(0, 256, ({shape_str},), dtype=torch.uint8)"
-
-            elif "bool" in clean_dtype:
-                expr = f"{param_name} = (torch.rand(({shape_str},)) > 0.5).to(dtype=torch.bool)"
-
-            elif "complex" in clean_dtype:
-                # 对 complex 类型，底层实部 dtype 映射
-                base = "float32" if clean_dtype == "complex64" else "float64"
-                expr = (
-                    f"{param_name} = (torch.randn(({shape_str},), dtype=torch.{base}) + "
-                    f"1j * torch.randn(({shape_str},), dtype=torch.{base})).to(dtype=torch.{clean_dtype})"
-                )
-
-            else:
-                expr = f"# Unsupported dtype: {clean_dtype}"
-
-            samples.append(expr)
-
-    return samples
-
-def generate_scalar_param_cases(param_name, param_info):
-    p_type = param_info.get("type")
-    lo = param_info.get("min", 0)
-    hi = param_info.get("max", 10)
-
-    # 1️⃣ 计算中间点
-    mid = (lo + hi) / 2
-
-    # 2️⃣ 生成基本取值
-    if p_type == "int":
-        # 确保整数范围内不重复
-        values = sorted(set([lo, int(mid), hi]))
-        samples = [f"{param_name}={v}" for v in values]
-    elif p_type == "float":
-        # 包括最小、最大、中间、边界偏移
-        mid_lo = lo + (mid - lo) / 2
-        mid_hi = mid + (hi - mid) / 2
-        values = [lo, mid_lo, mid, mid_hi, hi]
-        samples = [f"{param_name}={round(v, 6)}" for v in values]
-    else:
-        raise ValueError(f"Unsupported type: {p_type}")
-
-    return samples
-
-# 生成简单参数
-def generate_sample_param(api_name, param, param_info):
-    """
-    根据 param_info 的类型生成单个参数样本。
-    支持 Tensor、int、float、bool、str、optional、choices 等。
-    """
-    p_type = param_info.get("type")
-    p_type = p_type.lower()
-    # 1️⃣ Tensor 类型
-    if "tensor" in p_type:
-
-        return generate_tensor_param_cases(param, param_info)
-
-    # 2️⃣ 数值型参数
-    elif p_type in ["int", "float"]:
-        return generate_scalar_param_cases(param, param_info)
-
-    # 3️⃣布尔型参数
-    elif "bool" in p_type:
-        samples = [f"{param}=True", f"{param}=False"]
-        return samples
-
-    # 4️⃣ 字符串参数（无 choices）
-    elif "str" in p_type and "choices" not in param_info:
-        length = param_info.get("length", 5)
-        samples = []
-        for _ in range(2):  # 生成两个不同字符串
-            s = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=length))
-            samples.append(f"{param}={s}")
-        return samples
-
-    # 5️⃣ 可选参数（可能为 None）
-    elif "optional" in p_type:
-        samples = []
-        if "choices" in param_info:
-            # 包含 None + 所有枚举选项
-            samples = [f"{param}=None"] + [f"{param}={choice}" for choice in param_info["choices"]]
-        else:
-            # 默认包含 None + 一个示例值
-            samples = [f"{param}=None", f"{param}=some_value"]
-        return samples
-
-    # 6️⃣ 有 choices（枚举）参数
-    elif "choices" in param_info:
-        choices = param_info["choices"]
-        samples = [f"{param}=None"] + [f"{param}={choice}" for choice in choices] 
-        return samples
-    else:
-        raise ValueError(f"[{api_name}] Unsupported type: {p_type}")
-# -------------------------------------------------------
-# Z3约束检查
-# -------------------------------------------------------
-# -------------------------------------------------------
-# 1. Parse tensor creation expressions (static, no eval)
-# -------------------------------------------------------
-
-def parse_tensor_expr(expr: str):
-    """
-    Extract shape, dtype for expressions like:
-    - torch.randn((128,256,256), dtype=torch.float64)
-    - torch.randint(0,10,(256,), dtype=torch.int64)
-    - (...).to(dtype=torch.complex128)
-    - 1j * torch.randn(...)
-    """
-
-    meta = {"defined": True}
-
-    # extract .to(dtype=xxx)
-    m = re.search(r'\.to\(dtype=torch\.(\w+)\)', expr)
-    if m:
-        meta["dtype"] = f"torch.{m.group(1)}"
-
-    # extract dtype=... from inside call
-    m = re.search(r'dtype=torch\.(\w+)', expr)
-    if m and "dtype" not in meta:
-        meta["dtype"] = f"torch.{m.group(1)}"
-
-    # extract shape: (... , ...)
-    m = re.search(r'\((\s*\d+(?:\s*,\s*\d+)*\s*,?)\)', expr)
-    if m:
-        shape_str = m.group(1)
-        shape = tuple(int(s) for s in shape_str.split(",") if s.strip().isdigit())
-        meta["shape"] = list(shape)
-        meta["dim"] = len(shape)
-
-    # default dtype guess if missing
-    if "dtype" not in meta:
-        meta["dtype"] = "unknown"
-
-    return meta
-
-# -------------------------------------------------------
-# 2. Convert parsed meta to Z3 objects
-# -------------------------------------------------------
-
-def meta_to_z3(meta):
-    z = {}
-    z["shape"] = [IntVal(dim) for dim in meta.get("shape",[])]
-    z["dim"] = IntVal(meta.get("dim",0))
-    z["dtype"] = StringVal(meta.get("dtype","unknown"))
-    z["defined"] = BoolVal(meta.get("defined", True))
-    return z
-
-# -------------------------------------------------------
-# 3. Basic expression parser (same as before)
-# -------------------------------------------------------
-
-def parse_basic_expr(expr, env):
-    expr = expr.strip()
-
-    # literal int
-    if expr.isdigit():
-        return IntVal(int(expr))
-
-    # shape[index]
-    m = re.match(r"(\w+)\.shape\[(\d+)\]", expr)
-    if m:
-        return env[m.group(1)]["shape"][int(m.group(2))]
-
-    # dtype()
-    m = re.match(r"(\w+)\.dtype\(\)", expr)
-    if m:
-        return env[m.group(1)]["dtype"]
-
-    # dtype field
-    m = re.match(r"(\w+)\.dtype$", expr)
-    if m:
-        return env[m.group(1)]["dtype"]
-
-    # defined()
-    m = re.match(r"(\w+)\.defined\(\)", expr)
-    if m:
-        return env[m.group(1)]["defined"]
-
-    # simple var
-    if expr in env:
-        return env[expr]
-
-    return None
-
-# -------------------------------------------------------
-# 4. Constraint parser: string → Z3
-# -------------------------------------------------------
-
-def parse_constraint_to_z3(cstr, env):
-    cstr = cstr.strip()
-
-    # "A || B"
-    if "||" in cstr:
-        return Or(*[parse_constraint_to_z3(p, env) for p in cstr.split("||")])
-
-    # "A && B"
-    if "&&" in cstr:
-        return And(*[parse_constraint_to_z3(p, env) for p in cstr.split("&&")])
-
-    # "!A"
-    if cstr.startswith("!"):
-        return Not(parse_constraint_to_z3(cstr[1:].strip(), env))
-
-    # comparison ops
-    for op in ["==","<=",">=","<",">"]:
-        if op in cstr:
-            lhs, rhs = cstr.split(op)
-            lhs = parse_basic_expr(lhs.strip(), env)
-            rhs = parse_basic_expr(rhs.strip(), env)
-            mapping = {
-                "==": lambda a,b: a==b,
-                "<=": lambda a,b: a<=b,
-                ">=": lambda a,b: a>=b,
-                "<":  lambda a,b: a<b,
-                ">":  lambda a,b: a>b
-            }
-            return mapping[op](lhs,rhs)
-
-    raise ValueError(f"Unsupported constraint: {cstr}")
-
-# -------------------------------------------------------
-# 5. main: check_constraints()
-# -------------------------------------------------------
-
-def check_constraints(combo, constraints):
-    solver = Solver()
-
-    # Build Z3 env
+    if not constraints:
+        return True
+        
+    merged_inputs = {**default_inputs, **combo_dict}
+    
     env = {}
-    for name, expr in combo.items():
-        if isinstance(expr, str):
-            meta = parse_tensor_expr(expr)
-            env[name] = meta_to_z3(meta)
-        elif expr.isdigit():
-            env[name] = IntVal(int(expr))
+    for k, v in merged_inputs.items():
+        if isinstance(v, str):
+            if v == "null" or v == "None":
+                env[k] = None
+            elif v == "True":
+                env[k] = True
+            elif v == "False":
+                env[k] = False
+            else:
+                try:
+                    env[k] = eval(v, {"torch": torch})
+                except Exception:
+                    env[k] = v
         else:
-            raise TypeError("Unsupported combo content")
-
-    # Add constraints
-    for c in constraints:
-        solver.add(parse_constraint_to_z3(c, env))
-
-    sat = solver.check()
-    return sat, solver.model() if sat == sat else None
+            env[k] = v
+            
+    # 3. 逐一验证约束条件
+    for constraint in constraints:
+        try:
+            # 尝试执行约束判断表达式
+            result = eval(constraint, {"torch": torch}, env)
+            # 只有当语句合法且明确返回 False 时，才判定为不满足
+            if not result:
+                return False
+        except Exception as e:
+            # 【核心修改点】
+            # 如果 constraint 不是合法的 Python 语句（如 SyntaxError）
+            # 或者生成的测试值缺少对应属性（如对整数 54 取 .ndim 引发 AttributeError）
+            # 按照你的需求，这里捕获异常并放行（默认为 True），继续检查下一个约束
+            # print(f"警告: 约束 '{constraint}' 无法评估，跳过。原因: {e}")
+            continue
+            
+    return True
 
 
 # 将元组列表转换为字典列表
@@ -1108,42 +869,46 @@ def convert_list_to_dict_list(data_list):
 
 
 
-def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=None, tokenizer=None):
+def generate_test_inputs_from_api_boundaries(api_name, api_boundaries, model=None, tokenizer=None, default_inputs=None):
     """
     根据 API 的边界规范，生成满足约束的测试输入组合。
     """
     params = api_boundaries.get("params", {})
     constraints = api_boundaries.get("constraints", [])
+    if default_inputs is None:
+        default_inputs = {}
 
     # 1️⃣ 为每个参数生成候选样本
     candidate_dict = {}
     for param_name, param_info in params.items():
-        p_type = param_info.get("type")
-        if p_type in ["Tensor", "int", "float", "bool", "str", "optional"]:
-            candidate_dict[param_name] = generate_sample_param(api_name, param_name, param_info)
-        else:
+        param_input = generate_sample_param(api_name, param_name, param_info)
+        if param_input == "complex":
             # 使用模型生成复杂参数
-            candidate_dict[param_name] = [generate_complex_param(api_name, param_name, param_info, constraints, model, tokenizer)]
+            candidate_dict[param_name] = generate_complex_param(api_name, param_name, param_info, constraints, model, tokenizer)
+        else:
+            candidate_dict[param_name] = param_input
 
     # 2️⃣ 生成所有参数的笛卡尔积组合
     keys = list(candidate_dict.keys())
-    all_combos = list(itertools.product(*[candidate_dict[k] for k in keys]))
+    all_combos_tuples = list(itertools.product(*[candidate_dict[k] for k in keys]))
 
     # 3️⃣ 约束筛选
     valid_inputs = []
     i = 1
-    length = len(all_combos)
-    for combo in all_combos:
-        print("第"+str(i)+"/"+str(length)+"个")
+    length = len(all_combos_tuples)
+    for combo_tuple in all_combos_tuples:
+        print(f"第 {i}/{length} 个")
         i += 1
-    #     if check_constraints(combo, constraints):
+        
+        # 【修正】将 tuple 转换为带有参数名的字典
+        combo_dict = dict(zip(keys, combo_tuple))
+        
+        if check_constraints(combo_dict, constraints, default_inputs):
+            # 将字典形式加入有效列表
+            valid_inputs.append(combo_dict)
 
-    #         valid_inputs.append(combo)
-
-    # 4️⃣ 转换为字典列表
-    new_combos = convert_list_to_dict_list(all_combos)
-
-    return new_combos
+    # 4️⃣ 返回经过筛选的有效组合 (无需再去转换 all_combos)
+    return valid_inputs
 
 
 

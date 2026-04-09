@@ -1,5 +1,5 @@
-import torch
-import tensorflow as tf
+# import torch
+# import tensorflow as tf
 from transformers import AutoTokenizer, AutoModelForCausalLM, Starcoder2ForCausalLM, BitsAndBytesConfig
 import json
 import re
@@ -25,7 +25,7 @@ import random
 import gc
 import psutil
 import traceback
-from z3 import *
+#from z3 import *
 from itertools import product
 
 root_path = "/data/chaoni"
@@ -39,10 +39,10 @@ model_path = root_path + "/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 
 
 
-lib_name = "torch"  # 库名称
+lib_name = "glom"  # 库名称
 # test.cpp
 # joern_project  = "pytorch-2.5.1" # joern 项目名
-joern_project  = "pytorch-2.5.1" # joern 项目名
+joern_project  = "glom_master" # joern 项目名
 joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
 
 gpu_str = os.environ.get("FREE_GPUS", "")

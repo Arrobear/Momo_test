@@ -4,6 +4,48 @@ from generate_prompt import *
 from generate_prompt import *
 from stage_2_function import *
 
+import glom.grouping
+import requests
+
+glom.grouping.target_iter
+# ==========================================
+# 测试用例示例（需要在环境中安装对应的包）
+# ==========================================
+if __name__ == "__main__":
+
+    api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
+    for api_name in api_names:
+        doc = get_doc(api_name)
+
+
+    
+    # 3. 测试具有嵌套子模块的库 (如 numpy.random / scipy.optimize)
+    # print(get_doc("numpy.random.randint"))
+    
+    # 4. 测试不存在的库或 API
+    # print(get_doc("fake_library.fake_function"))
+
+# requests.utils.urldefragauth(url)
+# # 必须在 CUDA 环境下触发
+# input_tensor = torch.randn(1, 1, 4, 4, device='cuda')
+# # 传入超过 32 位有符号整型最大值的 stride (2^31)
+# F.avg_pool2d(input_tensor, kernel_size=2, stride=2147483648)
+
+# a = {
+#     "test_values": [
+#         54,
+#         "hello",
+#         [1, 2, 3],
+#         {"key": "value"},
+#         None,
+#         True,
+#         False,
+#         3.14,
+#         torch.randn(32, 32, dtype=torch.float32)
+#     ]
+# }
+
+
 # constraints = [
 #                     "input.shape[1] == weight.shape[1]",
 #                     "input.dtype == weight.dtype"
@@ -21,28 +63,28 @@ from stage_2_function import *
 
 
 
-api_names = read_file(f"C:/Users/86184/Desktop/Papers/documentation/{lib_name}_APIdef.txt")
-length_api_names = len(api_names)
-print("length_api_names:"+str(length_api_names))
-k = 0
-l = 0
-input = []
-for i in range(length_api_names):
-    print(i)
-    n = 0
-    api_name = filter_samenames(i, api_names[i], api_names)
-    arg_combinations = read_json_api(api_name=api_name, file_path=f"C:/Users/86184/Desktop/Papers/documentation/arg_combinations/", read_mode="cut_combination")
-    # api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
-    # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
-    # conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
-    # arg_spaces = read_json_api(api_name=api_names[i], file_path=f"/home/chaoni/haoyahui/documentation/arg_space/", read_mode="arg_space")
-    for arg_combination in arg_combinations:
-        n += len(arg_combination["combinations"])
-    k += n
-    if n >= 100:
-        input.append({api_name: n})
-print("k:"+str(k))
-print(input)
+# api_names = read_file(f"C:/Users/86184/Desktop/Papers/documentation/{lib_name}_APIdef.txt")
+# length_api_names = len(api_names)
+# print("length_api_names:"+str(length_api_names))
+# k = 0
+# l = 0
+# input = []
+# for i in range(length_api_names):
+#     print(i)
+#     n = 0
+#     api_name = filter_samenames(i, api_names[i], api_names)
+#     arg_combinations = read_json_api(api_name=api_name, file_path=f"C:/Users/86184/Desktop/Papers/documentation/arg_combinations/", read_mode="cut_combination")
+#     # api_code = read_json_api(api_name=api_name, file_path=f"../documentation/api_src_code/", read_mode="src_code")
+#     # error_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+#     # conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+#     # arg_spaces = read_json_api(api_name=api_names[i], file_path=f"/home/chaoni/haoyahui/documentation/arg_space/", read_mode="arg_space")
+#     for arg_combination in arg_combinations:
+#         n += len(arg_combination["combinations"])
+#     k += n
+#     if n >= 100:
+#         input.append({api_name: n})
+# print("k:"+str(k))
+# print(input)
 
 # api_name =  "torch.index_select"
 # arg_combinations = read_json_api(api_name=api_name, file_path=f"./documentation/arg_combinations/", read_mode="combination")

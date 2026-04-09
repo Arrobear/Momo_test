@@ -11,16 +11,13 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 
 
 def generate_api_conditions(api_names):
-    with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(f"../documentation/lib_api/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
     # 加载模型
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    # model = AutoModelForCausalLM.from_pretrained(model_path,device_map={"": gpu_ids[0]} )
-    # model = AutoModelForCausalLM.from_pretrained(model_path, load_in_8bit=True, device_map={"": gpu_ids[0]} )
-    # model = Starcoder2ForCausalLM.from_pretrained(model_path, device_map={"": gpu_ids[0]} )
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
-    log_path = f'/tmp/Momo_test/{lib_name}_log.txt'
+    # tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+    # log_path = f'/tmp/Momo_test/{lib_name}_log.txt'
     i = 0
 
     while(True):
@@ -32,8 +29,11 @@ def generate_api_conditions(api_names):
         function_name = filter_samenames(i, fun_string, api_names)
         i += 1
         api_doc = get_doc(function_name)
+        print(api_doc)
+        break
         if api_doc == False:
-            add_log(log_path ,f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            # add_log(log_path ,f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            print(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
 
         # 生成prompt
@@ -49,14 +49,14 @@ def generate_api_conditions(api_names):
         outputs = generate_output(inputs, model, tokenizer)
         # 解码输出
         outputs_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+        # add_log(log_path, "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
         
         api_conditions = handle_output(outputs_text, model_path)
 
         #存储至json
         path = f'/tmp/Momo_test/{lib_name}_conditions.json'
         append_api_condition_to_json(path, function_name, api_conditions)
-        add_log(log_path, f"已完成{function_name}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
+        # add_log(log_path, f"已完成{function_name}的API条件生成, 进度"+str(i)+"/"+str(len(api_names)))
 
         if i >= len(api_names):
         # if i >= 50:
@@ -124,11 +124,8 @@ def check_condition_filter(api_names):
     with open(f"../documentation/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
-    large_combination_api = []
-
     i = 0   #ｉ：循环变量
     j = 0   #ｊ：json文件编号
-
 
     while True:
         # 读取json文件，每次读取一个函数的合理参数组合数组(若过大，则分批读取)
@@ -144,27 +141,20 @@ def check_condition_filter(api_names):
         function_name = filter_samenames(i, fun_string, api_names)
         i += 1
 
-        
         arg_combinations, j = get_all_combinations_from_json(function_name, j)
         api_doc = get_doc(function_name)
         if api_doc == False:
-            add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt',f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
+            print(f'/tmp/Momo_test/error_combinations/{lib_name}_log.txt',f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
 
         # last_combination = ['learning_rate', 'initial_accumulator_value', 'l1_regularization_strength', 'name', 'l2_shrinkage_regularization_strength', 'weight_decay', 'clipnorm', 'clipvalue', 'ema_momentum', 'ema_overwrite_frequency', 'loss_scale_factor', 'gradient_accumulation_steps']
         # last_key = False
         
-        add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt',f"准备检查 {function_name} 的参数组合，共 {len(arg_combinations)} 组, 当前函数文件编号 = {j}")
+        # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt',f"准备检查 {function_name} 的参数组合，共 {len(arg_combinations)} 组, 当前函数文件编号 = {j}")
         n = 0  # 进度计数
 
         for arg_combination in arg_combinations:
-        #     if last_key == False:
-        #         if arg_combination == last_combination:
-        #             last_key = True
-        #             continue
-        #         continue
 
-            # 输出（从json中删除）不满足条件的组合  fun_string, args, api_def, api_doc
             prompt_2 = generate_prompt_2(fun_string,arg_combination, api_def, api_doc)
 
             if tokenizer.pad_token is None:
@@ -183,12 +173,12 @@ def check_condition_filter(api_names):
             if 'False' in error_tag:
                 error_combinations.append(arg_combination)
                 
-                add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录"+f"函数文件编号 = {j}")
-                add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
+                # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f"[错误] {function_name} 的参数组合 {arg_combination} 可能不合法，已记录"+f"函数文件编号 = {j}")
+                # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', "模型输出：\n" + outputs_text + "\n ______________________________________________________________________________________________________________________")
             
             n += 1
             print("当前进度："+str(n)+"/"+str(len(arg_combinations)))
-        add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f" {function_name} 的参数组合已确认，当前函数文件编号 = {j}")
+        # add_log(f'/tmp/Momo_test/error_combinations/{lib_name}_log_{j}.txt', f" {function_name} 的参数组合已确认，当前函数文件编号 = {j}")
 
         path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'  # 非法参数组合文件路径
         append_filtered_combinations_to_json(path, function_name, error_combinations)
@@ -300,7 +290,7 @@ def generate_default_inputs(api_names):
         # 根据lib_name生成不同的输入
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
-        path = root_path + f'/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+        path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_default_inputs_{j}.json'
         length_api_names = len(api_names)
 
         i = 0
@@ -325,7 +315,7 @@ def generate_default_inputs(api_names):
                 #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = root_path + f'/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+                path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_default_inputs_{j}.json'
                 save_api_inputs(api_name, api_default_input, path)
             else:
                 save_api_inputs(api_name, api_default_input, path)
@@ -345,8 +335,8 @@ def generate_api_input(api_names):
     api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
 
     # 加载LLM模型
-    # tokenizer = AutoTokenizer.from_pretrained(model_path)
-    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype = torch.float16, device_map={"": gpu_ids[0]} )
 
     if lib_name == "torch":
         # 根据lib_name生成不同的输入
@@ -358,17 +348,14 @@ def generate_api_input(api_names):
         for i in range(length_api_names):
             api_inputs = []
             api_name = api_names[i]
-            api_boundarys = read_json_api(api_name=api_name, file_path=f"../documentation/arg_boundary/{lib_name}_boundary_{k}.json", read_mode="boundary")
-            if api_boundarys == None:
-                k += 1
-                api_boundarys = read_json_api(api_name=api_name, file_path=f"../documentation/arg_boundary/{lib_name}_boundary_{k}.json", read_mode="boundary")
-
+            api_boundarys = read_json_api(api_name=api_name, file_path=f"../documentation/arg_boundary/cut_{lib_name}_boundary_{k}.json", read_mode="boundary")
+            api_default_inputs = read_json_api(api_name=api_name, file_path=f"../documentation/api_input/{lib_name}_default_inputs_{j}.json", read_mode="default_input")
             # 将api_boundary转换为字典形式
             # api_boundary = json.loads(api_boundary_str)
             n = 0
             for api_boundary in api_boundarys:
                 
-                api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary["api_input"], model = None, tokenizer = None)
+                api_input = generate_test_inputs_from_api_boundaries(api_name, api_boundary["api_input"], model = model, tokenizer = tokenizer, default_inputs = api_default_inputs)
                 new_api_input = {"path_type": api_boundary["path_type"], "api_input": api_input}
                 api_inputs.append(new_api_input)
                 if n == 0:
@@ -413,8 +400,7 @@ def generate_test_cases(api_names):
 
     if lib_name == "torch":
         j = 0
-        path = root_path + f'/haoyahui/Momo_test/{lib_name}_case_{j}.json'
-
+        path = root_path + f'/haoyahui/documentation/test_cases/{lib_name}_case_{j}.json'
         for i in range(len(api_names)):
             # 获取函数名
             api_name = api_names[i]
@@ -425,14 +411,11 @@ def generate_test_cases(api_names):
             i += 1
             api_doc = get_doc(function_name)
             # 生成prompt
-            prompt_5 = generate_prompt_5(api_name,api_def, api_doc)
+            prompt_6 = generate_prompt_6(api_name,api_def, api_doc)
             
-            print(prompt_5)
-            if i == 1:
-                break
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token  # 常见做法
-            inputs = generate_input(prompt_5, tokenizer, model)
+            inputs = generate_input(prompt_6, tokenizer, model)
 
             # 把inputs放到模型参数所在设备
             inputs = inputs.to(next(model.parameters()).device)
@@ -446,12 +429,11 @@ def generate_test_cases(api_names):
                         #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = root_path + f'/haoyahui/Momo_test/{lib_name}_case_{j}.json'
+                path = root_path + f'/haoyahui/documentation/test_cases/{lib_name}_case_{j}.json'
                 save_api_inputs(api_name, case, path)
             else:
                 save_api_inputs(api_name, case, path)
             print(f"已完成{api_name}的API测试案例model生成, 进度"+str(i)+"/"+str(len(api_names)))
-
 
     elif lib_name == "tf":
         pass
@@ -473,40 +455,111 @@ def generate_test_cases(api_names):
 # 对测试案例model注入测试输入并运行
 #------------------------------------
 def run_test_cases():
+    api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
+    if lib_name == "torch":
+        j = 0
+        path = root_path + f'/haoyahui/documentation/results/{lib_name}_result_{j}.json'
+        
+        for i in range(len(api_names)):
+            k = 0
+            api_name = api_names[i]
+            function_name = filter_samenames(i, api_name, api_names)
+            
+            inputs = read_json_api(api_name=api_name, file_path=f"../documentation/api_input/{lib_name}_inputs_{k}.json", read_mode="inputs")
+            case = read_json_api(api_name=api_name, file_path=f"../documentation/test_cases/{lib_name}_case_{k}.json", read_mode="case")
+            print(case)
+            # 1. 提取并加载 run_api 函数
+            code_str = case.strip()
+            code_match = re.search(r'```python\n(.*?)\n```', code_str, re.DOTALL)
+            if code_match:
+                code_str = code_match.group(1)
+            
+            local_namespace = {}
+            run_api = None
+            try:
+                exec(code_str, globals(), local_namespace)
+                run_api = local_namespace.get("run_api")
+            except Exception as e:
+                print(f"解析 {api_name} 的 case 代码失败: {e}")
+                # 函数解析失败也应该记录
+                pass 
 
-    def run_api(*args, **kwargs):
-        """Auto-generated test template for torch.nn.Conv2d"""
-        # extract input before class instantiation
-        input_tensor = kwargs.pop("input", None)
-        model = torch.nn.Conv2d(*args, **kwargs)
-        output = model(input_tensor)
-        return output
-    
-    test_inputs = [
-    {
-        "input": torch.randn(1, 3, 32, 32),
-        "in_channels": 3,
-        "out_channels": 8,
-        "kernel_size": 3
-    },
-    {
-        "input": torch.randn(8, 512, 1024, 1024),
-        "in_channels": 512,
-        "out_channels": 1024,
-        "kernel_size": 5,
-        "padding": 2
-    },
-    {
-        "input": torch.randn(1, 3, 64, 64),
-        "in_channels": 3,
-        "out_channels": 8,
-        "kernel_size": 3,
-        "groups": 4
-    }
-]
+            # 2. 准备存储运行结果的参数
+            api_run_results = []
 
-    execute_api_template(run_api, test_inputs)
-    return
+            # 3. 遍历输入，逐个运行并记录结果
+            for input_group in inputs:
+                path_type = input_group.get("path_type", "unknown")
+                api_inputs_list = input_group.get("api_input", [])
+                
+                for item in api_inputs_list:
+                    # 结果模板
+                    result_entry = {
+                        "api_name": api_name,
+                        "path_type": path_type,
+                        "original_input": item,  # 记录原始字符串输入，方便后续排查且支持JSON序列化
+                        "status": "pending",
+                        "error_message": None
+                    }
+
+                    if not run_api:
+                        result_entry["status"] = "error"
+                        result_entry["error_message"] = "run_api 函数加载失败"
+                        api_run_results.append(result_entry)
+                        continue
+
+                    # 尝试将字符串输入转为对象
+                    evaluated_item = {}
+                    eval_success = True
+                    for param_name, param_value in item.items():
+                        try:
+                            # 核心修复：如果是字符串，则用 eval 解析（如 "torch.randn(...)"）
+                            if isinstance(param_value, str):
+                                evaluated_item[param_name] = eval(param_value)
+                            # 如果已经是 int, float, list 等基础类型（如 stride: 10），直接赋值
+                            else:
+                                evaluated_item[param_name] = param_value
+                        except Exception as e:
+                            eval_success = False
+                            result_entry["status"] = "error"
+                            result_entry["error_message"] = f"参数解析错误 ({param_name}): {str(e)}"
+                            break
+                    
+                    if not eval_success:
+                        api_run_results.append(result_entry)
+                        continue
+
+                    # 尝试运行 API
+                    try:
+                        # 假设 run_api 接受 kwargs 形式的参数
+                        output = run_api(**evaluated_item)
+                        result_entry["status"] = "success"
+                        # 如果需要，你也可以把 output 的 shape 或 dtype 记录下来
+                        # result_entry["output_info"] = str(output.shape) if hasattr(output, 'shape') else "success"
+                    except Exception as e:
+                        result_entry["status"] = "error"
+                        result_entry["error_message"] = f"API 运行错误: {str(e)}"
+                    
+                    # 将当前用例的运行结果加入列表
+                    api_run_results.append(result_entry)
+            if i < 1:
+                break
+            # 4. 文件切分与保存逻辑 (替换了 case 参数)
+            if is_file_too_large(path, max_size_mb=1000):
+                j += 1
+                path = root_path + f'/haoyahui/documentation/results/{lib_name}_result_{j}.json'
+                # 这里将第二个参数从 case 改为 api_run_results
+                save_api_inputs(api_name, api_run_results, path)
+            else:
+                # 这里将第二个参数从 case 改为 api_run_results
+                save_api_inputs(api_name, api_run_results, path)
+                
+            print(f"已完成 {api_name} 的API测试案例运行与记录, 进度 {i+1}/{len(api_names)}")
+
+    elif lib_name == "tf":
+        pass
+    else:
+        pass
 
 
 
