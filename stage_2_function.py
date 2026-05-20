@@ -1473,13 +1473,11 @@ def torch_extract_api_source(api_name: str):
 # 在当前文件夹生成所有 API 的 guards 和路径枚举结果
 
 
-
 if __name__ == "__main__":
-    api_def_path = f"../documentation/{lib_name}_APIdef.txt"
+    api_def_path = f"../documentation/lib_api/{lib_name}_APIdef.txt"
 
     # arg_space 的生成依赖于 api_guards 
     # api_guards 的生成依赖于本文件中的 guard 提取函数
-    
     j = 0
     save_path = f"../documentation/arg_space/{lib_name}_arg_space_{j}.json"
 

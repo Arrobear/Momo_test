@@ -5,7 +5,6 @@ import json
 import re
 import itertools
 import os
-import bitsandbytes
 import sys 
 from accelerate import infer_auto_device_map, init_empty_weights
 from torch_samename import *
@@ -13,22 +12,25 @@ from pathlib import Path
 import yaml
 import importlib
 import inspect
-import types
 import ast
 import textwrap
-import requests
 import subprocess
 import time
 import uuid
-import random
-# from cpgqls_client import *
 import gc
 import psutil
 import traceback
-#from z3 import *
 from itertools import product
+from openai import OpenAI
+import json_repair
+import math
+import random
+
 
 root_path = "/data/chaoni"
+
+API_KEY = "su8-6e341c62b4e1753aeba6881564f3354ea7ad80d51ae482bc928a5992fb9e16bf"
+BASE_URL = "https://www.su8.codes/codex/v1"
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
@@ -37,7 +39,7 @@ model_path = root_path + "/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
-
+import glom
 
 lib_name = "glom"  # 库名称
 # test.cpp

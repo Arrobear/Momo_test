@@ -73,7 +73,8 @@ def filter_apidocument(api_doc):
 def get_doc(function_name: str) -> str:
     """
     根据完整的API名称（如 'torch.bitwise_not' 或 'scipy.optimize.minimize'）
-    动态导入相关模块并获取其文档字符串。
+    动态导入相关模块并获取其文档字符串。如果该API是类内方法且自身无文档，
+    将自动回退获取其所属类的文档字符串。
     
     参数:
         function_name (str): 完整的API调用路径字符串。
@@ -87,29 +88,37 @@ def get_doc(function_name: str) -> str:
     parts = function_name.split('.')
     
     # 采用“降级导入”策略：从最长的路径开始尝试导入模块
-    # 例如针对 'scipy.optimize.minimize':
-    # 第一次尝试导入 'scipy.optimize.minimize' (会抛出 ImportError，因为 minimize 是函数)
-    # 第二次尝试导入 'scipy.optimize' (成功导入) -> 然后通过 getattr 获取 minimize 属性
     for i in range(len(parts), 0, -1):
         module_name = '.'.join(parts[:i])
         try:
             # 尝试动态导入模块
             obj = importlib.import_module(module_name)
             
+            # 【核心修改1】：引入 parent_obj 用于追踪目标对象的上级节点
+            parent_obj = None
+            
             # 如果模块导入成功，依次向下获取具体的属性（类、函数、方法等）
             for attr in parts[i:]:
+                parent_obj = obj
                 obj = getattr(obj, attr)
             
             # 优先使用 inspect.getdoc() 获取清理过缩进的文档字符串
-            # 如果获取不到，尝试直接获取 __doc__ 属性
             doc = inspect.getdoc(obj)
             if not doc and hasattr(obj, '__doc__'):
                 doc = obj.__doc__
-                
+            
+            # 【核心修改2】：针对无文档的 API，如果是类内方法，获取其父类文档
+            if not doc and parent_obj is not None and inspect.isclass(parent_obj):
+                doc = inspect.getdoc(parent_obj)
+                if not doc and hasattr(parent_obj, '__doc__'):
+                    doc = parent_obj.__doc__
+                # if doc:
+                #     print(f"提示：API '{function_name}' 自身无文档，已回退提取其所属类 '{parent_obj.__name__}' 的文档。")
+
             if doc:
                 return doc
             else:
-                print(f"提示：找到了API '{function_name}'，但该API没有编写文档字符串。")
+                # print(f"提示：找到了API '{function_name}'，但该API及其所属类（若有）均没有编写文档字符串。")
                 return None
             
         except (ImportError, AttributeError):
@@ -119,8 +128,64 @@ def get_doc(function_name: str) -> str:
             # 捕获库初始化时可能抛出的其他运行时异常
             print(f"错误：在提取 '{function_name}' 时发生异常: {str(e)}")
             return None
+            
     print(f"错误：无法找到API '{function_name}'。请确保输入的API名称正确，并且环境中已安装对应的第三方库。")        
     return None
+
+# 清理无文档的 API：从源文件中物理删除无文档的 API 条目（保留有效 API 的原始签名）。
+def clean_undocumented_apis_from_file(file_path):
+    """
+    使用现有的 read_file 提取 API 名并验证文档，
+    将无文档的 API 从源文件中物理删除（同时保留有效 API 的原始签名）。
+    """
+    if not os.path.exists(file_path):
+        print(f"[-] 错误：找不到文件 {file_path}")
+        return
+
+    # 1. 使用你已有的 read_file 获取干净的 API 名列表
+    # (假设 read_file 已经在当前命名空间或被正确导入)
+    api_names = read_file(file_path)
+    
+    valid_api_names = set()
+    removed_count = 0
+
+    print(f"[*] 开始验证 {lib_name} 的 API 文档，共 {len(api_names)} 个待测条目...")
+
+    # 2. 核心逻辑：验证每个 API 是否有文档
+    for api_name in api_names:
+        doc = get_doc(api_name)
+        if doc is None:
+            print(f"[-] API '{api_name}' 没有找到文档，准备移除。")
+            removed_count += 1
+        else:
+            valid_api_names.add(api_name)
+
+    # 3. 如果有需要移除的 API，读取原文件并进行安全覆写
+    if removed_count > 0:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            original_lines = f.readlines()
+            
+        valid_lines_to_write = []
+        for line in original_lines:
+            original_str = line.strip()
+            if not original_str:
+                continue
+            
+            # 获取当前行的纯净名称用于比对字典（兼容带有签名的源文件行）
+            current_clean_name = original_str.split('(')[0]
+            
+            # 如果该 API 在有效集合中，则保留其包含参数签名的整行
+            if current_clean_name in valid_api_names:
+                valid_lines_to_write.append(original_str)
+
+        # 覆写回源文件
+        with open(file_path, 'w', encoding='utf-8') as f:
+            for valid_line in valid_lines_to_write:
+                f.write(f"{valid_line}\n")
+                
+        print(f"[*] 清理完成！已从源文件中物理删除 {removed_count} 个无文档的 API。当前剩余有效 API: {len(valid_lines_to_write)} 个。")
+    else:
+        print(f"[*] 验证完成！所有 API 均拥有文档，源文件未作修改。")
 
 
 #根据函数文档获取参数列表
@@ -190,7 +255,7 @@ def extract_parameters_tf(api_doc, api_def):
 
 #获取函数所有合法参数
 def get_all_parameters(api_name: str):
-    json_filename = f"{lib_name}_conditions.json"
+    json_filename = path = root_path + f'/haoyahui/documentation/conditions/{lib_name}_conditions.json'
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     json_path = os.path.join(current_dir, "conditions", json_filename)
@@ -204,7 +269,11 @@ def get_all_parameters(api_name: str):
     if "Parameter type" not in data[api_name]:
         return []
     
+    # 获取所有 key
     return list(data[api_name]["Parameter type"].keys())
+    
+    # 过滤掉 "self" (忽略大小写可以使用 p.lower() != 'self')
+    # return [p for p in params if p != "self"]
     # api_doc = get_doc(fun_string)
     # 先根据api_doc获取参数列表
     # 如果不能通过api_doc获取参数列表，则使用api_def获取参数列表
@@ -280,33 +349,49 @@ def read_file(file_path):
     return api_names
 
 # 向JSON文件中添加API条件
+
+
 def append_api_condition_to_json(path, fun_string, new_data):
+    # 1. 预处理 new_data：确保其转化为字典
     if not new_data:
         condition_dict = {}
+    elif isinstance(new_data, dict):
+        condition_dict = new_data
     else:
         try:
-            # 把字符串解析为 Python 字典
+            # 解析字符串为 Python 字典
             condition_dict = json.loads(new_data)
-        except json.JSONDecodeError as e:
-            add_log(f"JSON 解析错误: {e}")
+        except (json.JSONDecodeError, TypeError):
+            print(f"[错误] 无法解析 {fun_string} 的数据格式")
             return
 
-    # 读取原始 JSON 文件内容（如果存在）
+    # 2. 确保目标文件夹存在
+    directory = os.path.dirname(path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+
+    # 3. 读取原始数据
+    data = {}
     if os.path.exists(path):
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # 检查文件大小，避免读取空文件导致的 JSONDecodeError
+            if os.path.getsize(path) > 0:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
         except json.JSONDecodeError:
+            # 如果文件损坏，备份并初始化（科研严谨性：防止覆盖已有数据）
+            print(f"[警告] {path} 文件损坏，已初始化空字典")
             data = {}
-    else:
-        data = {}
 
-    # 添加或更新项
+    # 4. 更新数据
     data[fun_string] = condition_dict
 
-    # 写回 JSON 文件
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+    # 5. 写回文件
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"[错误] 写入文件失败: {e}")
 
 # 获取JSON文件中的api_conditions
 def get_api_conditions(fun_string, file_path):
@@ -318,7 +403,8 @@ def get_api_conditions(fun_string, file_path):
         return data.get(fun_string, None)
 
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        add_log(f"Error reading file: {e}")
+        # add_log(f"Error reading file: {e}")
+        print(f"Error reading file: {e}")
         return None
 
 # 记录log
@@ -401,7 +487,7 @@ def handle_output(text: str, model_path: str):
     if "DeepSeek-R1-Distill-Qwen-32B" in model_path:
         end_tag = "</think>"
         if end_tag not in text:
-            add_log("未找到 </think> 标签")
+            print("[-] 错误：输出中未找到 '</think>' 标签，无法提取 JSON 内容。")
             return None
 
         # 获取 </think> 后的内容
@@ -416,63 +502,125 @@ def handle_output(text: str, model_path: str):
         except json.JSONDecodeError as e:
             return None
 
-# 从大模型输出中抽取 </think> 后的 JSON
+# 从大模型输出中抽取 <tool_call> 后的 JSON
+def extract_clean_list(outputs_text: str) -> list:
+    """
+    通过静态 AST 解析大模型输出的复杂列表文本，转换为严格可 JSON 序列化的 Python 列表。
+    保留了结构，所有非常规对象均被降级为字符串表示。
+    """
+    text = outputs_text.strip()
+    if not text:
+        return []
+
+    try:
+        # mode='eval' 表示期望解析一个表达式树，该过程完全静态
+        tree = ast.parse(text, mode='eval')
+    except SyntaxError as e:
+        # 大模型输出存在根本性语法错误时的阻断
+        return [f"SyntaxError_during_parsing: {e}"]
+
+    # 校验根节点类型
+    if not isinstance(tree.body, ast.List):
+        return [f"TypeError: Expected list, got {type(tree.body).__name__}"]
+
+    def to_json_safe(node):
+        """递归解析 AST 节点并映射为 JSON 安全类型"""
+        # 1. 处理基础常量
+        if isinstance(node, ast.Constant):
+            val = node.value
+            # JSON 原生支持的数据类型
+            if isinstance(val, (str, int, float, bool, type(None))):
+                # 拦截 JSON 标准不完全支持的特殊浮点数
+                if isinstance(val, float) and (math.isinf(val) or math.isnan(val)):
+                    return str(val)
+                return val
+            # bytes, complex 等非 JSON 类型转为字面量字符串
+            return repr(val)
+        
+        # 2. 处理列表和元组 (统一降级为 JSON Array)
+        elif isinstance(node, (ast.List, ast.Tuple)):
+            return [to_json_safe(elt) for elt in node.elts]
+        
+        # 3. 处理字典 (JSON Object)
+        elif isinstance(node, ast.Dict):
+            safe_dict = {}
+            for k, v in zip(node.keys, node.values):
+                # JSON 的键强制要求为字符串
+                safe_key = str(to_json_safe(k)) if k is not None else "null"
+                safe_dict[safe_key] = to_json_safe(v)
+            return safe_dict
+        
+        # 4. 其他所有复杂节点 (如 object(), T.__('x'), lambda)
+        # 使用 ast.unparse 将其重新生成为标准文本
+        else:
+            try:
+                return ast.unparse(node)
+            except Exception:
+                return "<Unparseable_AST_Node>"
+
+    # 遍历外层列表元素
+    return [to_json_safe(elt) for elt in tree.body.elts]
+
+
+
 def extract_clean_json(text: str):
-    """
-    从大模型输出中抽取 </think> 后的 JSON，
-    自动补大括号、去除重复字段、修复常见错误（含 Python 关键词替换），返回最终解析出的 dict。
-    """
-
+    # 1. 定位有效区域
     end_tag = "</think>"
-    if end_tag not in text:
-        return None
+    if end_tag in text:
+        after = text.split(end_tag, 1)[1].strip()
+    else:
+        after = text.strip()
 
-    # 1. 获取 </think> 后的内容
-    after = text.split(end_tag, 1)[1].strip()
-
-    # 2. 定位 JSON 开始位置
+    # 2. 提取 JSON 片段
     start = after.find("{")
     if start == -1:
         return None
+    
+    # 查找最后一个大括号，粗略截取
+    end = after.rfind("}")
+    if end == -1 or end < start:
+        return None
+    
+    json_str = after[start:end+1]
 
-    fragment = after[start:]
+    # 3. 预处理 Python 关键字（仅在不在引号内时替换，防止误杀）
+    def replace_keep_quotes(m):
+        s = m.group(0)
+        if s.startswith('"') or s.startswith("'"):
+            return s
+        s = re.sub(r'\bNone\b', 'null', s)
+        s = re.sub(r'\bTrue\b', 'true', s)
+        s = re.sub(r'\bFalse\b', 'false', s)
+        return s
 
-    # 3. 使用大括号平衡提取完整 JSON 字符串 (假设你已有 balance_json_braces 函数)
-    json_str = balance_json_braces(fragment)
+    # 简单通过正则区分字符串内外进行替换
+    json_str = re.sub(r'("[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\'|[^"\']+)', replace_keep_quotes, json_str)
 
-    # 4. 强制去掉末尾非 JSON 内容 (假设你已有 trim_after_last_brace 函数)
-    json_str = trim_after_last_brace(json_str)
-
-    # ==========================================
-    # [新增] 5. 预处理：修复 Python 风格的关键字
-    # 使用 \b 确保是全词匹配，避免替换掉包含 None/True/False 的普通单词
-    # ==========================================
-    json_str = re.sub(r'\bNone\b', 'null', json_str)
-    json_str = re.sub(r'\bTrue\b', 'true', json_str)
-    json_str = re.sub(r'\bFalse\b', 'false', json_str)
-    pattern = r'([a-zA-Z_][a-zA-Z0-9_\.]*\s*\(.*?\))'
-        
-    def to_string_repr(match):
-        content = match.group(1)
-        # 如果已经是引号包裹的则不处理（防止嵌套破坏）
-        # 这里简单处理：将内部的引号转义，整体包上双引号
-        safe_content = content.replace('"', '\\"')
-        return f'"{safe_content}"'
-    json_str = re.sub(pattern, to_string_repr, json_str)
-    # 6. 尝试解析 JSON
+    # 4. 解析逻辑
     try:
         data = json.loads(json_str)
-    except Exception:
-        # 如果解析失败，尝试增强修复 (假设你已有 force_fix_json 函数)
-        fixed = force_fix_json(json_str)
+    except json.JSONDecodeError:
+        # 调用外部修复函数
         try:
-            data = json.loads(fixed)
-        except Exception:
-            return None
+            from json_repair import repair_json  # 推荐使用专门的库
+            json_str = repair_json(json_str)
+            data = json.loads(json_str)
+        except:
+            # 最后的保底尝试：基础符号修复
+            try:
+                # 如果没有 balance_json_braces，可在此实现简单的大括号对齐
+                open_braces = json_str.count('{')
+                close_braces = json_str.count('}')
+                if open_braces > close_braces:
+                    json_str += '}' * (open_braces - close_braces)
+                data = json.loads(json_str)
+            except:
+                return None
 
-    # 7. constraints 去重（如果存在）
+    # 5. 后处理
     if isinstance(data, dict) and "constraints" in data:
-        data["constraints"] = list(dict.fromkeys(data["constraints"]))
+        if isinstance(data["constraints"], list):
+            data["constraints"] = list(dict.fromkeys(data["constraints"]))
 
     return data
 # 使用大括号平衡算法提取最早闭合的 JSON。
@@ -580,10 +728,11 @@ def get_all_combinations_from_json(api_name, j):
     while True:
         try:
         # 读取JSON文件
-            with open(f'/nasdata/haoyahui/Arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
+            with open(root_path + f'/haoyahui/documentation/arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
             # 提取api_name项
+            
             args_combinations = data.get(api_name)
             
         except KeyError:
@@ -664,8 +813,6 @@ def read_json_api(api_name, file_path, read_mode):
                 with open(new_path, "r", encoding="utf-8") as f:
                     new_data = json.load(f)
                 return new_data[api_name]
-            if j > 20:
-                break
     elif read_mode == "src_code":
         path = file_path+f'{lib_name}_api_sources.json'
         with open(path, "r", encoding="utf-8") as f:
@@ -679,25 +826,47 @@ def read_json_api(api_name, file_path, read_mode):
         if api_name in data:
             return data[api_name] 
     elif read_mode == "boundary":
-        with open(file_path, "r", encoding="utf-8") as f:
+        path = file_path+f'{lib_name}_boundary_0.json'
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if api_name in data:
             return data[api_name] 
     elif read_mode == "default_input":
-        with open(file_path, "r", encoding="utf-8") as f:
+        path = file_path+f'{lib_name}_default_inputs_0.json'
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if api_name in data:
             return data[api_name] 
     elif read_mode == "inputs":
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
+        j = 0
+        while j <= 20:
+            path = file_path + f'{lib_name}_inputs_{j}.json'
+            if not os.path.exists(path):
+                break
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if api_name in data:
+                    return data[api_name]
+            except (json.JSONDecodeError, IOError):
+                pass
+            j += 1
+        return None
     elif read_mode == "case":
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
+        j = 0
+        while j <= 20:
+            path = file_path + f'{lib_name}_case_{j}.json'
+            if not os.path.exists(path):
+                break
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if api_name in data:
+                    return data[api_name]
+            except (json.JSONDecodeError, IOError):
+                pass
+            j += 1
+        return None
     elif read_mode == "cut_combination":
         j = 0
         path = file_path+f'{lib_name}_cut_combinations_{j}.json'
@@ -712,8 +881,6 @@ def read_json_api(api_name, file_path, read_mode):
                 with open(new_path, "r", encoding="utf-8") as f:
                     new_data = json.load(f)
                 return new_data[api_name]
-            if j > 20:
-                break
     else:
         return None
 
@@ -743,7 +910,13 @@ def save_api_inputs(api_name, api_inputs, save_path):
 
     # 3️⃣ 合并（增量保存）
     if api_name in all_data:
-        all_data[api_name].extend(api_inputs)
+        existing = all_data[api_name]
+        if isinstance(existing, dict) and isinstance(api_inputs, dict):
+            existing.update(api_inputs)
+        elif isinstance(existing, list) and isinstance(api_inputs, list):
+            existing.extend(api_inputs)
+        else:
+            all_data[api_name] = api_inputs
     else:
         all_data[api_name] = api_inputs
 
@@ -1081,7 +1254,7 @@ def cut_combinations(api_names):
                     filter_params.add(param)
         return filter_params
 
-    if lib_name == "torch":
+    if lib_name != "torch":
         # 根据lib_name生成不同的输入
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
@@ -1148,3 +1321,41 @@ def cut_combinations(api_names):
         pass
 
     return
+
+
+
+
+
+def save_and_paginate(api_name, api_run_results, path, root_path, lib_name, j, page_pattern=None):
+    if is_file_too_large(path, max_size_mb=1000):
+        j += 1
+        if page_pattern:
+            path = page_pattern.format(root_path=root_path, lib_name=lib_name, j=j)
+        else:
+            path = root_path + f'/haoyahui/documentation/results/{lib_name}_result_{j}.json'
+    # 将符合差分目标的字典列表 api_run_results 写入指定 api_name 键下
+    save_api_inputs(api_name, api_run_results, path)
+    return j, path
+
+
+def safe_serialize(obj):
+    """
+    安全序列化函数，确保 V2 的输出与 V1 记录格式统一，防止对比误报。
+    """
+    if isinstance(obj, (int, float, str, bool, type(None))):
+        return obj
+    return repr(obj)
+
+def compare_results(v1_result, v2_result, status_v1, status_v2):
+    """
+    差分断言逻辑。
+    比较 V1 和 V2 的状态及输出结果。
+    """
+    if status_v1 != status_v2:
+        return False, f"状态不一致: V1 [{status_v1}] vs V2 [{status_v2}]"
+    
+    # 转换为字符串后比对，避免跨环境对象内存地址不同导致的误报
+    if str(v1_result) != str(v2_result):
+        return False, f"输出不一致:\n  V1: {v1_result}\n  V2: {v2_result}"
+    
+    return True, "一致"

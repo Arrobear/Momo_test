@@ -175,7 +175,7 @@ def generate_prompt_2(fun_string, args, api_def, api_doc):
             {"role": "user", "content": ori_prompt}
         ]
     # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
-    return prompt
+    return ori_prompt
 
 
 
@@ -187,7 +187,6 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
     for arg in arg_combination:
         if arg in conditions:
             arg_intro[arg] = conditions[arg]
-    print(arg_intro)
     ori_prompt = f'''
     \n1. Role:
         You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
@@ -292,7 +291,7 @@ def generate_prompt_3(api_name, arg_combination, arg_space, conditions):
             {"role": "user", "content": ori_prompt}
         ]
     # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
-    return prompt
+    return ori_prompt
 def generate_prompt_4(api_name, param_name, api_doc):
 
     ori_prompt = f'''
@@ -358,7 +357,7 @@ def generate_prompt_4(api_name, param_name, api_doc):
             {"role": "user", "content": ori_prompt}
         ]
     # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
-    return prompt
+    return ori_prompt
 
 def generate_prompt_5(api_name, param_name, param_info, param_constraints, api_doc):
 
@@ -598,7 +597,7 @@ def generate_prompt_6(api_name, arg_signature, api_doc):
             {"role": "user", "content": ori_prompt}
         ]
     # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
-    return prompt
+    return ori_prompt
 
 
 
@@ -669,3 +668,156 @@ def generate_prompt_7(combo, constraint):
         ]
     # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
     return prompt
+
+
+def generate_prompt_8(api_name, key, value, api_boundarys ,api_doc, api_code):
+    def handle_boundary(api_boundary, key):
+        """
+        遍历 api_boundary，提取所有 params 中等于 key 的项的信息，去重后返回列表
+        
+        :param api_boundary: 列表格式的接口边界信息
+        :param key: 要查找的键名（如 key_1、key_2）
+        :return: 去重后的信息列表
+        """
+        # 存储所有匹配到的信息
+        result_list = []
+
+        # 1. 遍历 api_boundary 里的每一条数据
+        for item in api_boundary:
+            # 取出 api_input -> params
+            api_input = item.get("api_input", {})
+            params = api_input.get("params", {})
+
+            # 2. 判断当前 params 里是否存在目标 key
+            if key in params:
+                # 把对应的信息加入列表
+                info = params[key]
+                result_list.append(info)
+
+        # 3. 去重（支持字典、普通数据）
+        # 先转成 tuple（可哈希），再转 set 去重，最后转回列表
+        unique_list = []
+        seen = set()
+
+        for item in result_list:
+            # 处理字典：转成 tuple 才能存入 set
+            if isinstance(item, dict):
+                item_tuple = tuple(sorted(item.items()))
+                if item_tuple not in seen:
+                    seen.add(item_tuple)
+                    unique_list.append(item)
+            # 普通数据直接判断
+            else:
+                if item not in seen:
+                    seen.add(item)
+                    unique_list.append(item)
+
+        return unique_list
+
+    arg_boundary_info = handle_boundary(api_boundarys, key)
+    
+
+    ori_prompt = f"""
+        1. Role:
+            You are a senior testing expert specializing in API boundary-value analysis and bug mining for the Python library [{lib_name}].
+            Your goal is to generate **type-compatible, semantically meaningful** test inputs that expose hidden logic bugs,
+            parameter validation defects, and exception handling flaws — NOT trivially rejected garbage values.
+
+        ---
+        2. Background and Context:
+            (1) API Name: {api_name}
+            (2) Target parameter: {key}
+                This is the **only** parameter to generate test inputs for. Do not handle other parameters.
+            (3) Parameter type and constraints: {value}
+            (4) Complete API documentation: {api_doc}
+            (5) API source code: {api_code}
+                Use this to identify implicit validation logic, early-return paths, and potential crash triggers.
+            (6) Parameter domain information: {arg_boundary_info}
+                You must cover every domain rule in this list — each rule must have at least one corresponding test input.
+
+        ---
+        3. Type-Aware Testing Strategy (CRITICAL):
+
+            You MUST first determine the declared type of parameter "{key}" from (3), then generate test inputs
+            **appropriate for that type**. The strategy varies by type:
+
+            - **int / float / numeric**:
+              Boundary values (min, max from domain rules), just-beyond-boundary (min-1, max+1),
+              zero, negative values (if domain implies non-negative), floating-point precision edge (1e-7, 1e15),
+              overflow candidates (2**31, 2**63), special floats (0.0, -0.0, float('inf'), float('nan')).
+              Do NOT generate strings, lists, dicts, or booleans for numeric parameters.
+
+            - **str / enum-like**:
+              Every valid choice from the domain, invalid enum values not in the allowed set,
+              empty string, extremely long string (repeat pattern), strings with special characters
+              (newline, tab, unicode), case-variant of valid values.
+              Do NOT generate numbers, lists, or dicts for string parameters.
+
+            - **bool**:
+              Only True and False. Do not pad with None, 0, 1, or other types.
+
+            - **Tensor**:
+              Represent as a Python string containing valid [{lib_name}] tensor construction code, e.g.:
+              "torch.randn(1, 3, 32, 32, dtype=torch.float32)"
+              Cover: minimum shape (1-element), large shape (memory pressure), dtype boundaries
+              (float16 vs float64, complex, int vs float mismatch), 0-dim tensor, device mismatch.
+              Do NOT generate raw numeric literals or string literals for Tensor parameters.
+
+            - **tuple / list**:
+              Minimum-length tuple/list, maximum-length tuple/list, empty tuple/list,
+              tuples with boundary element values, nested structures.
+              Keep the outer structure (tuple/list) correct; vary the inner elements.
+
+            - **Optional[T]** / nullable:
+              Include None exactly once. All other values must be of type T (apply T's strategy above).
+
+            - **Union / complex object**:
+              Generate at least one value for each variant in the union.
+              For dict/config objects, vary keys and values according to their sub-schemas.
+
+        ---
+        4. General Testing Principles:
+
+            (1) **Type-compatibility first**: Every value must be a valid Python literal or expression for the
+                declared type of "{key}". Values that Python would reject before the API even runs (e.g., passing
+                a list to an int parameter) are **useless noise** — do NOT generate them.
+            (2) **Boundary coverage**: For each domain rule in {arg_boundary_info}, generate:
+                - The exact boundary value (e.g., min, max)
+                - A value just beyond the boundary (e.g., min-1, max+1)
+            (3) **Source-code-driven values**: Analyze {api_code} to find implicit checks, early returns,
+                or unchecked paths — design inputs that exploit these.
+            (4) **No duplicates**: Each value in the output list must be unique.
+            (5) **Quantity**: Generate 8 to 20 test values. Fewer means insufficient coverage; more wastes budget.
+            (6) **Single-parameter focus**: Only generate values for "{key}". Do not produce full API call code.
+
+        ---
+        5. Output Format (VERY IMPORTANT):
+
+            Output **only** a standard Python list. No markdown, no code fences, no comments, no explanations.
+            - String values: wrapped in double quotes
+            - Numeric / boolean / None: written literally
+            - Tensor values: written as a quoted string containing valid [{lib_name}] code, e.g. "torch.randn(2, 3)"
+            - Compound types: conform to Python syntax
+
+        ---
+        6. Examples (format only, NOT related to this question):
+
+            Example A — numeric parameter:
+                key: length, type: int (min: 1, max: 999)
+                Output: [1, 999, 0, 1000, -1, 2, 998, 500, 2**31, -999, 1e-7]
+
+            Example B — string/enum parameter:
+                key: mode, type: str (choices: ["constant", "reflect", "replicate"])
+                Output: ["constant", "reflect", "replicate", "", "REFLECT", "invalid_mode", "constant\\x00", "a"*1000]
+
+            Example C — bool parameter:
+                key: bias, type: bool
+                Output: [True, False]
+
+            Example D — optional tensor parameter:
+                key: weight, type: Optional[Tensor]
+                Output: [None, "torch.randn(3, 3, dtype=torch.float32)", "torch.randn(1, 1, dtype=torch.float16)", "torch.zeros(0, 3)", "torch.randn(3, 3, dtype=torch.complex64)"]
+
+        """
+
+    return ori_prompt
