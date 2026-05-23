@@ -255,7 +255,7 @@ def extract_parameters_tf(api_doc, api_def):
 
 #获取函数所有合法参数
 def get_all_parameters(api_name: str):
-    json_filename = path = root_path + f'/haoyahui/documentation/conditions/{lib_name}_conditions.json'
+    json_filename = path = root_path + f'/documentation/conditions/{lib_name}_conditions.json'
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     json_path = os.path.join(current_dir, "conditions", json_filename)
@@ -476,7 +476,7 @@ def is_file_too_large(file_path, max_size_mb=10):
 
 # 手动处理output
 def handle_output(text: str, model_path: str):
-    if model_path == "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct":
+    if model_path == "/nasdata/Model/Meta-Llama-3-70B-Instruct":
         target = "  6.Notions:\n    Only output the json content of the example in the output format, do not add explanations.assistant\n"
         start_index = text.find(target) + len(target)
         json_content = text[start_index:].strip()
@@ -728,7 +728,7 @@ def get_all_combinations_from_json(api_name, j):
     while True:
         try:
         # 读取JSON文件
-            with open(root_path + f'/haoyahui/documentation/arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
+            with open(root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{k}.json', 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
             # 提取api_name项
@@ -826,7 +826,7 @@ def read_json_api(api_name, file_path, read_mode):
         if api_name in data:
             return data[api_name] 
     elif read_mode == "boundary":
-        path = file_path+f'{lib_name}_boundary_0.json'
+        path = file_path+f'cut_{lib_name}_boundary_0.json'
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if api_name in data:
@@ -1258,7 +1258,7 @@ def cut_combinations(api_names):
         # 根据lib_name生成不同的输入
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
-        path = root_path + f"/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json"
+        path = root_path + f"/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json"
         length_api_names = len(api_names)
         for i in range(0, length_api_names):
             api_name = filter_samenames(i, api_names[i], api_names)
@@ -1299,7 +1299,7 @@ def cut_combinations(api_names):
                 #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = root_path + f"/haoyahui/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json"
+                path = root_path + f"/documentation/arg_combinations/{lib_name}_cut_combinations_{j}.json"
                 save_api_inputs(api_name, cut_combination, path)
             else:
                 save_api_inputs(api_name, cut_combination, path)
@@ -1332,7 +1332,7 @@ def save_and_paginate(api_name, api_run_results, path, root_path, lib_name, j, p
         if page_pattern:
             path = page_pattern.format(root_path=root_path, lib_name=lib_name, j=j)
         else:
-            path = root_path + f'/haoyahui/documentation/results/{lib_name}_result_{j}.json'
+            path = root_path + f'/documentation/results/{lib_name}_result_{j}.json'
     # 将符合差分目标的字典列表 api_run_results 写入指定 api_name 键下
     save_api_inputs(api_name, api_run_results, path)
     return j, path
@@ -1341,10 +1341,147 @@ def save_and_paginate(api_name, api_run_results, path, root_path, lib_name, j, p
 def safe_serialize(obj):
     """
     安全序列化函数，确保 V2 的输出与 V1 记录格式统一，防止对比误报。
+    当 repr 触发 RecursionError 时，返回递归 bug 标记。
     """
     if isinstance(obj, (int, float, str, bool, type(None))):
         return obj
-    return repr(obj)
+    try:
+        return repr(obj)
+    except RecursionError:
+        return f"[RECURSION_BUG] {type(obj).__name__}: repr() 触发了递归深度超限，疑似对象中存在循环引用或自引用结构"
+
+def generate_bug_report(result_path=None, output_path=None):
+    """
+    从基线 JSON 中提取所有 recursion_bug 条目，生成 bug 汇总报告。
+
+    :param result_path: 基线结果 JSON 路径，默认 results/{lib_name}_v1_baseline.json
+    :param output_path: bug 报告输出路径，默认 results/{lib_name}_recursion_bugs.json
+    :return: 汇总 dict {api_name: [bug_entries]}
+    """
+    if result_path is None:
+        result_path = root_path + f'/documentation/results/{lib_name}_v1_baseline.json'
+    if output_path is None:
+        output_path = root_path + f'/documentation/results/{lib_name}_recursion_bugs.json'
+
+    if not os.path.exists(result_path):
+        print(f"[bug_report] 基线文件不存在: {result_path}")
+        return {}
+
+    with open(result_path, "r", encoding="utf-8") as f:
+        try:
+            all_data = json.load(f)
+        except json.JSONDecodeError:
+            print(f"[bug_report] 基线文件 JSON 解析失败: {result_path}")
+            return {}
+
+    bug_manifest = {}
+    for api_name, cases in all_data.items():
+        bug_cases = []
+        for idx, case in enumerate(cases):
+            result_str = str(case.get("函数返回结果", ""))
+            if case.get("函数运行状态") == "recursion_bug" or case.get("bug_category") == "recursion" or result_str.startswith("[RECURSION_BUG]"):
+                location = case.get("bug_location")
+                if not location:
+                    location = "result_repr" if result_str.startswith("[RECURSION_BUG]") else "unknown"
+                bug_cases.append({
+                    "case_index": idx,
+                    "inputs": case.get("测试输入", {}),
+                    "bug_location": location,
+                    "detail": result_str
+                })
+        if bug_cases:
+            bug_manifest[api_name] = bug_cases
+
+    # 写报告
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(bug_manifest, f, indent=4, ensure_ascii=False)
+
+    # 打印汇总
+    total_bugs = sum(len(v) for v in bug_manifest.values())
+    print("\n" + "=" * 60)
+    print(f"  递归 Bug 汇总: 共 {total_bugs} 个用例, 涉及 {len(bug_manifest)} 个 API")
+    print("=" * 60)
+    for api_name, bugs in sorted(bug_manifest.items()):
+        locations = set(b["bug_location"] for b in bugs)
+        print(f"  {api_name}: {len(bugs)} 个用例, 触发位置: {', '.join(sorted(locations))}")
+    print(f"\n详细报告已保存至: {output_path}")
+
+    return bug_manifest
+
+
+def generate_timeout_bug_report(result_path=None, output_path=None):
+    """
+    从基线 JSON 中提取所有 timeout 条目，生成超时 bug 汇总报告。
+
+    :param result_path: 基线结果 JSON 路径，默认 results/{lib_name}_v1_baseline.json
+    :param output_path: bug 报告输出路径，默认 results/{lib_name}_timeout_bugs.json
+    :return: 汇总 dict {api_name: [bug_entries]}
+    """
+    if result_path is None:
+        result_path = root_path + f'/documentation/results/{lib_name}_v1_baseline.json'
+    if output_path is None:
+        output_path = root_path + f'/documentation/results/{lib_name}_timeout_bugs.json'
+
+    if not os.path.exists(result_path):
+        print(f"[timeout_bug_report] 基线文件不存在: {result_path}")
+        return {}
+
+    # 支持分页加载
+    bug_manifest = {}
+    base_no_ext = result_path.replace('.json', '')
+    for j in range(20):
+        if j == 0:
+            page_path = result_path
+        else:
+            page_path = f"{base_no_ext}_{j}.json"
+        if not os.path.exists(page_path):
+            break
+        with open(page_path, "r", encoding="utf-8") as f:
+            try:
+                all_data = json.load(f)
+            except json.JSONDecodeError:
+                continue
+
+        for api_name, cases in all_data.items():
+            bug_cases = []
+            for idx, case in enumerate(cases):
+                result_str = str(case.get("函数返回结果", ""))
+                if case.get("函数运行状态") == "timeout" or case.get("bug_category") == "timeout" or result_str.startswith("[TIMEOUT]"):
+                    location = case.get("bug_location", "api_execution")
+                    bug_cases.append({
+                        "case_index": idx,
+                        "inputs": case.get("测试输入", {}),
+                        "bug_location": location,
+                        "detail": result_str
+                    })
+            if bug_cases:
+                if api_name not in bug_manifest:
+                    bug_manifest[api_name] = []
+                bug_manifest[api_name].extend(bug_cases)
+
+    # 写报告
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(bug_manifest, f, indent=4, ensure_ascii=False)
+
+    # 打印汇总
+    total_bugs = sum(len(v) for v in bug_manifest.values())
+    print("\n" + "=" * 60)
+    print(f"  超时 Bug 汇总: 共 {total_bugs} 个用例, 涉及 {len(bug_manifest)} 个 API")
+    print("=" * 60)
+    for api_name, bugs in sorted(bug_manifest.items()):
+        locations = set(b["bug_location"] for b in bugs)
+        print(f"  {api_name}: {len(bugs)} 个用例, 触发位置: {', '.join(sorted(locations))}")
+    print(f"\n详细报告已保存至: {output_path}")
+
+    return bug_manifest
+
+def _normalize_address(s):
+    """将字符串中的内存地址 0x... 替换为 0xXXXX，消除跨进程地址差异"""
+    import re
+    return re.sub(r'0x[0-9a-fA-F]+', '0xXXXX', s)
+
 
 def compare_results(v1_result, v2_result, status_v1, status_v2):
     """
@@ -1353,9 +1490,11 @@ def compare_results(v1_result, v2_result, status_v1, status_v2):
     """
     if status_v1 != status_v2:
         return False, f"状态不一致: V1 [{status_v1}] vs V2 [{status_v2}]"
-    
-    # 转换为字符串后比对，避免跨环境对象内存地址不同导致的误报
-    if str(v1_result) != str(v2_result):
+
+    # 转换为字符串后比对，先规范化内存地址避免跨进程地址差异导致的误报
+    s1 = _normalize_address(str(v1_result))
+    s2 = _normalize_address(str(v2_result))
+    if s1 != s2:
         return False, f"输出不一致:\n  V1: {v1_result}\n  V2: {v2_result}"
-    
+
     return True, "一致"

@@ -674,43 +674,37 @@ def generate_prompt_8(api_name, key, value, api_boundarys ,api_doc, api_code):
     def handle_boundary(api_boundary, key):
         """
         遍历 api_boundary，提取所有 params 中等于 key 的项的信息，去重后返回列表
-        
+
         :param api_boundary: 列表格式的接口边界信息
         :param key: 要查找的键名（如 key_1、key_2）
         :return: 去重后的信息列表
         """
-        # 存储所有匹配到的信息
+        def make_hashable(obj):
+            """递归将不可哈希类型转为可哈希类型"""
+            if isinstance(obj, dict):
+                return tuple(sorted((k, make_hashable(v)) for k, v in obj.items()))
+            if isinstance(obj, list):
+                return tuple(make_hashable(v) for v in obj)
+            return obj
+
         result_list = []
 
-        # 1. 遍历 api_boundary 里的每一条数据
         for item in api_boundary:
-            # 取出 api_input -> params
             api_input = item.get("api_input", {})
             params = api_input.get("params", {})
 
-            # 2. 判断当前 params 里是否存在目标 key
             if key in params:
-                # 把对应的信息加入列表
                 info = params[key]
                 result_list.append(info)
 
-        # 3. 去重（支持字典、普通数据）
-        # 先转成 tuple（可哈希），再转 set 去重，最后转回列表
         unique_list = []
         seen = set()
 
         for item in result_list:
-            # 处理字典：转成 tuple 才能存入 set
-            if isinstance(item, dict):
-                item_tuple = tuple(sorted(item.items()))
-                if item_tuple not in seen:
-                    seen.add(item_tuple)
-                    unique_list.append(item)
-            # 普通数据直接判断
-            else:
-                if item not in seen:
-                    seen.add(item)
-                    unique_list.append(item)
+            hashable_item = make_hashable(item)
+            if hashable_item not in seen:
+                seen.add(hashable_item)
+                unique_list.append(item)
 
         return unique_list
 

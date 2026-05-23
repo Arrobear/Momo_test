@@ -1,5 +1,5 @@
 # import torch
-# import tensorflow as tf
+# import tensorflowY as tf
 from transformers import AutoTokenizer, AutoModelForCausalLM, Starcoder2ForCausalLM, BitsAndBytesConfig
 import json
 import re
@@ -27,10 +27,15 @@ import math
 import random
 
 
-root_path = "/data/chaoni"
+# root_path = "/data/chaoni/haoyahui"
+root_path = "C:/Users/86184/Desktop/Papers"
+# API_KEY = "su8-6e341c62b4e1753aeba6881564f3354ea7ad80d51ae482bc928a5992fb9e16bf"
+# BASE_URL = "https://www.su8.codes/codex/v1"
+# MODEL = "gpt-5.5"
 
-API_KEY = "su8-6e341c62b4e1753aeba6881564f3354ea7ad80d51ae482bc928a5992fb9e16bf"
-BASE_URL = "https://www.su8.codes/codex/v1"
+API_KEY = "sk-30a17e8207bd469f9d0801087422cd14"
+BASE_URL = "https://api.deepseek.com"
+MODEL = "deepseek-v4-pro"
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
@@ -40,11 +45,15 @@ model_path = root_path + "/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
 import glom
+import boolean
 
-lib_name = "glom"  # 库名称
+
+lib_name = "boolean"  # 库名称
+conmmit_hash = "0da6086c"
 # test.cpp
 # joern_project  = "pytorch-2.5.1" # joern 项目名
-joern_project  = "glom_master" # joern 项目名
+# {lib_name}_{commit_hash}
+joern_project  = "boolean_0da6086c" # joern 项目名
 joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
 
 gpu_str = os.environ.get("FREE_GPUS", "")

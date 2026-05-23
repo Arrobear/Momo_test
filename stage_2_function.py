@@ -1517,11 +1517,6 @@ if __name__ == "__main__":
 
     print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
 
-# api_name = "torch.nn.functional.cosine_embedding_loss"
-# ppaths = torch_enumerate_python_paths(f"../documentation/api_guards/{lib_name}_api_guards.json", api_name)
-# cpaths = torch_enumerate_cpp_paths(api_name)
-# merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
-# print(merged_paths)
 
 
 

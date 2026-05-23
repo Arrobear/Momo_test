@@ -1,6 +1,7 @@
 from config import *
 from stage_1_function import *
 from generate_prompt import *
+import threading
 '''
 存储整个方法中的小步骤 
 
@@ -40,7 +41,7 @@ def generate_api_conditions(api_names):
         # 调用线上 API 替代本地推理
         try:
             response = client.chat.completions.create(
-                model="gpt-5.5",  # 或者使用 deepseek-reasoner
+                model=MODEL,  # 或者使用 deepseek-reasoner
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": prompt_1},
@@ -64,7 +65,7 @@ def generate_api_conditions(api_names):
         print(api_conditions)
         
         # 存储至json
-        path = root_path + f'/haoyahui/documentation/conditions/{lib_name}_conditions.json'
+        path = root_path + f'/documentation/conditions/{lib_name}_conditions.json'
 
         # path = f'C:\\Users\\86184\\Desktop\\Papers\\documentation\\conditions\\{lib_name}_conditions.json'
         append_api_condition_to_json(path, function_name, api_conditions)
@@ -91,7 +92,7 @@ def base_condition_filter(api_names):
         args = get_all_parameters(function_name)
         all_combinations = generate_all_combinations(args)
 
-        json_path = root_path + f'/haoyahui/documentation/conditions/{lib_name}_conditions.json'
+        json_path = root_path + f'/documentation/conditions/{lib_name}_conditions.json'
         conditions = get_api_conditions(function_name, json_path)
         filtered_combinations = filter_combinations(all_combinations, conditions)
 
@@ -103,13 +104,13 @@ def base_condition_filter(api_names):
             apis_to_remove.add(function_name)
         else:
             # 只有在组合不为空时，才执行存储逻辑
-            path = root_path + f'/haoyahui/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
+            path = root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
             os.makedirs(os.path.dirname(path), exist_ok=True)
             
             if os.path.exists(path):
                 if is_file_too_large(path, max_size_mb=10):
                     j += 1
-                    path = root_path + f'/haoyahui/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
+                    path = root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
             
             # 如果文件不存在，初始化空 JSON
             if not os.path.exists(path):
@@ -189,7 +190,7 @@ def check_condition_filter(api_names):
             # --- API 调用替代本地模型推理 ---
             try:
                 response = client.chat.completions.create(
-                    model="gpt-5.5",
+                    model=MODEL,
                     messages=[
                         {"role": "system", "content": "You are a professional software testing assistant."},
                         {"role": "user", "content": prompt_2},
@@ -212,7 +213,7 @@ def check_condition_filter(api_names):
             n += 1
             print(f"API: {function_name} | 进度：{n}/{len(arg_combinations)}")
         # --------------------------------
-        path = root_path + f'/haoyahui/documentation/error_combinations/error_{lib_name}_combinations.json'
+        path = root_path + f'/documentation/error_combinations/error_{lib_name}_combinations.json'
         # path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'
         append_filtered_combinations_to_json(path, function_name, error_combinations)
 
@@ -232,42 +233,42 @@ def generate_api_boundary(api_names):
 
     # 移除 if lib_name == "torch" 判断，直接进入通用流程
     j = 0
-    path = root_path + f'/haoyahui/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
+    path = root_path + f'/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
     length_api_names = len(api_names)
     i = 0
 
     while i < length_api_names:
         api_inputs = []
         api_name = filter_samenames(i, api_names[i], api_names)
-        
+        print(f"API进度: {i+1}/{length_api_names} | {api_name}")
+
         # 读取相关的 JSON 配置
         arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="cut_combination")
         conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
         arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
 
         if arg_spaces is None:
-            add_log(root_path + f"/haoyahui/Momo_test/", api_name)
+            add_log(root_path + f"/Momo_test/", api_name)
             i += 1
             continue
-        
+
         length_arg_spaces = len(arg_combinations)
-        
+
         for arg_combination in arg_combinations:
             combinations = arg_combination["combinations"]
             length_combinations = len(combinations)
-            
+
             # 匹配参数空间 ID
             arg_space = None
             for arg_sp in arg_spaces:
                 if arg_sp["id"] == arg_combination["id"]:
                     arg_space = arg_sp
                     break
-            
+
             if not arg_space:
                 continue
 
             for comb_idx, comb in enumerate(combinations):
-                print(f"API进度: {i+1}/{length_api_names} | {api_name}")
 
 
                 path_type = arg_space["path_type"]
@@ -276,7 +277,7 @@ def generate_api_boundary(api_names):
                 # --- 调用线上 API ---
                 try:
                     response = client.chat.completions.create(
-                        model="gpt-5.5",
+                        model=MODEL,
                         messages=[
                             {"role": "system", "content": "You are a specialized AI for API boundary analysis and software testing."},
                             {"role": "user", "content": prompt},
@@ -300,7 +301,7 @@ def generate_api_boundary(api_names):
         
         if os.path.exists(path) and is_file_too_large(path, max_size_mb=1000):
             j += 1
-            path = root_path + f'/haoyahui/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
+            path = root_path + f'/documentation/arg_boundary/{lib_name}_boundary_{j}.json'
         
         save_api_inputs(api_name, api_inputs, path)
         
@@ -324,7 +325,7 @@ def generate_default_inputs(api_names):
     api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
 
     j = 0
-    path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_default_inputs_{j}.json'
+    path = root_path + f'/documentation/api_input/{lib_name}_default_inputs_{j}.json'
     length_api_names = len(api_names)
     i = 0
 
@@ -346,7 +347,7 @@ def generate_default_inputs(api_names):
         # --- 调用线上 API ---
         try:
             response = client.chat.completions.create(
-                model="gpt-5.5",
+                model=MODEL,
                 messages=[
                     {"role": "system", "content": "You are a specialized AI assistant for generating default API inputs and test cases."},
                     {"role": "user", "content": prompt},
@@ -365,7 +366,7 @@ def generate_default_inputs(api_names):
         # 检查文件大小，必要时切换文件编号
         if os.path.exists(path) and is_file_too_large(path, max_size_mb=1000):
             j += 1
-            path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_default_inputs_{j}.json'
+            path = root_path + f'/documentation/api_input/{lib_name}_default_inputs_{j}.json'
         
         save_api_inputs(api_name, api_default_input, path)
         
@@ -394,7 +395,7 @@ def generate_api_input_old(api_names):
         # 生成prompt   调用generate_prompt_3, 定义于generate_prompt.py
         j = 0
         k = 0
-        path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_inputs_{j}.json'
+        path = root_path + f'/documentation/api_input/{lib_name}_inputs_{j}.json'
         length_api_names = len(api_names)
         for i in range(length_api_names):
             api_inputs = []
@@ -414,7 +415,7 @@ def generate_api_input_old(api_names):
             #存储至json
             if is_file_too_large(path, max_size_mb=1000):
                 j+=1
-                path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_input_{j}.json'
+                path = root_path + f'/documentation/api_input/{lib_name}_input_{j}.json'
                 save_api_inputs(api_name, api_inputs, path)
             else:
                 save_api_inputs(api_name, api_inputs, path)
@@ -452,7 +453,7 @@ def generate_api_input(api_names):
     )
 
     j = 0
-    path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_inputs_{j}.json'
+    path = root_path + f'/documentation/api_input/{lib_name}_inputs_{j}.json'
     length_api_names = len(api_names)
     i = 0
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -476,7 +477,7 @@ def generate_api_input(api_names):
             prompt = generate_prompt_8(api_name, key, value, api_boundarys, api_doc, api_code)
             try:
                 response = client.chat.completions.create(
-                    model="gpt-5.5",
+                    model=MODEL,
                     messages=[
                         {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
                         {"role": "user", "content": prompt},
@@ -499,7 +500,7 @@ def generate_api_input(api_names):
         # 存储至 json
         if is_file_too_large(path, max_size_mb=1000):
             j += 1
-            path = root_path + f'/haoyahui/documentation/api_input/{lib_name}_inputs_{j}.json'
+            path = root_path + f'/documentation/api_input/{lib_name}_inputs_{j}.json'
         save_api_inputs(api_name, api_inputs_candidate, path)
         print(f"已完成{api_name}的API输入生成, 进度 {i+1}/{length_api_names}")
         i += 1
@@ -522,7 +523,7 @@ def generate_test_cases(api_names):
     api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
 
     j = 0
-    path = f"{root_path}/haoyahui/documentation/test_cases/{lib_name}_case_{j}.json"
+    path = f"{root_path}/documentation/test_cases/{lib_name}_case_{j}.json"
 
     for i in range(len(api_names)):
         api_name = api_names[i]
@@ -534,7 +535,7 @@ def generate_test_cases(api_names):
 
         try:
             response = client.chat.completions.create(
-                model="gpt-5.5",
+                model=MODEL,
                 messages=[
                     {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
                     {"role": "user", "content": prompt_6},
@@ -553,7 +554,7 @@ def generate_test_cases(api_names):
 
         if is_file_too_large(path, max_size_mb=1000):
             j += 1
-            path = f"{root_path}/haoyahui/documentation/test_cases/{lib_name}_case_{j}.json"
+            path = f"{root_path}/documentation/test_cases/{lib_name}_case_{j}.json"
 
         save_api_inputs(api_name, case, path)
         print(f"已完成 {api_name} 的API测试案例生成, 进度 {i + 1}/{len(api_names)}")
@@ -599,14 +600,87 @@ def _load_run_api(api_name):
         return None
 
 
+# 缓存 glom 命名空间，供 eval 使用
+_eval_globals_cache = None
+
+
+def _get_eval_globals():
+    """构建包含被测库公开 API 的 eval 命名空间，避免 eval 时 NameError"""
+    global _eval_globals_cache
+    if _eval_globals_cache is None:
+        _eval_globals_cache = {"glom": glom}
+        for name in dir(glom):
+            if not name.startswith("_"):
+                try:
+                    _eval_globals_cache[name] = getattr(glom, name)
+                except Exception:
+                    pass
+    return _eval_globals_cache
+
+
 def _eval_param_by_type(param_value, param_type):
-    """根据类型标签决定是否 eval：code 类型 eval，literal 类型原样返回"""
-    if param_type == "code" and isinstance(param_value, str):
+    """根据类型标签决定是否 eval：code 类型 eval，literal 类型也尝试还原 repr() 序列化的非基本类型"""
+    if not isinstance(param_value, str):
+        return param_value
+
+    eval_globals = _get_eval_globals()
+
+    if param_type == "code":
         try:
-            return eval(param_value)
+            return eval(param_value, eval_globals)
         except Exception:
             return param_value
+
+    # safe_serialize 对非基本类型调用 repr() 序列化，这里逆向还原
+    stripped = param_value.strip()
+    if stripped and stripped[0] in "{([":
+        try:
+            return ast.literal_eval(param_value)
+        except (ValueError, SyntaxError):
+            try:
+                return eval(param_value, eval_globals)
+            except Exception:
+                return param_value
+
+    # 部分 LLM 生成的候选值是代码表达式但被误标为 "literal"（如 "Val(0)", "Path('a','b')"）
+    # 尝试 eval：只接受结果为非字符串对象，避免将普通字符串意外转换
+    if stripped and "(" in stripped:
+        try:
+            result = eval(param_value, eval_globals)
+            if not isinstance(result, str):
+                return result
+        except Exception:
+            pass
+
     return param_value
+
+
+class _ApiTimeoutError(Exception):
+    """API 执行超时异常"""
+    pass
+
+
+def _run_with_timeout(run_api, timeout, **kwargs):
+    """在 daemon 线程中运行 API，超时抛出 _ApiTimeoutError，不等待卡死线程"""
+    result = None
+    exc = None
+
+    def target():
+        nonlocal result, exc
+        try:
+            result = run_api(**kwargs)
+        except Exception as e:
+            exc = e
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+
+    if t.is_alive():
+        raise _ApiTimeoutError(f"API 执行超时 ({timeout}s)")
+    if exc is not None:
+        raise exc
+    return result
 
 
 def run_test_cases_v1(K=100, output_path=None):
@@ -617,7 +691,7 @@ def run_test_cases_v1(K=100, output_path=None):
     """
     api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
     if output_path is None:
-        output_path = root_path + f'/haoyahui/documentation/results/{lib_name}_v1_baseline.json'
+        output_path = root_path + f'/documentation/results/{lib_name}_v1_baseline.json'
     page_pattern = output_path.replace('.json', '_{j}.json')
 
     j = 0
@@ -652,68 +726,109 @@ def run_test_cases_v1(K=100, output_path=None):
             if candidate_values:
                 selection_counts[param_name] = [0] * len(candidate_values)
 
-        # 2. 组装并执行 K 次测试用例
-        for k_idx in range(K):
-            assembled = {}
+        # 2. 组装并执行 K 次测试用例 (整块兜底: 防止任何遗漏路径的 RecursionError 导致整体崩溃)
+        last_serialized_input = {}
+        last_k = 0
+        try:
+            for k_idx in range(K):
+                assembled = {}
 
-            # --- 改进的轮盘赌算法（基于反比权重） ---
-            for param_name, param_info in inputs_dict.items():
-                if isinstance(param_info, dict):
-                    candidate_values = param_info.get("values", [])
-                    param_type = param_info.get("type", "literal")
-                else:
-                    candidate_values = param_info
-                    param_type = "literal"
+                # --- 改进的轮盘赌算法（基于反比权重） ---
+                for param_name, param_info in inputs_dict.items():
+                    if isinstance(param_info, dict):
+                        candidate_values = param_info.get("values", [])
+                        param_type = param_info.get("type", "literal")
+                    else:
+                        candidate_values = param_info
+                        param_type = "literal"
 
-                if not candidate_values:
+                    if not candidate_values:
+                        continue
+
+                    counts = selection_counts.get(param_name)
+                    if counts is None:
+                        continue
+                    weights = [1.0 / (c + 1) for c in counts]
+                    selected_idx = random.choices(range(len(candidate_values)), weights=weights, k=1)[0]
+                    selection_counts[param_name][selected_idx] += 1
+                    assembled[param_name] = {"value": candidate_values[selected_idx], "type": param_type}
+
+                serialized_input = {k: safe_serialize(v["value"]) for k, v in assembled.items()}
+                last_serialized_input = serialized_input
+                last_k = k_idx
+
+                result_entry = {
+                    "测试输入": serialized_input,
+                    "函数返回结果": None,
+                    "函数运行状态": "pending"
+                }
+
+                # --- 参数解析 (从序列化后的值反序列化，与 V2 回放路径一致) ---
+                evaluated_item = {}
+                eval_success = True
+                for param_name, entry in assembled.items():
+                    try:
+                        evaluated_item[param_name] = _eval_param_by_type(serialized_input[param_name], entry["type"])
+                    except RecursionError:
+                        eval_success = False
+                        result_entry["函数运行状态"] = "recursion_bug"
+                        result_entry["函数返回结果"] = f"[RECURSION_BUG] 参数 {param_name} 的 eval() 触发了递归深度超限"
+                        result_entry["bug_category"] = "recursion"
+                        result_entry["bug_location"] = f"eval_param:{param_name}"
+                        break
+                    except Exception as e:
+                        eval_success = False
+                        result_entry["函数运行状态"] = "error"
+                        result_entry["函数返回结果"] = f"参数解析错误 ({param_name}): {str(e)}"
+                        break
+
+                if not eval_success:
+                    api_run_results.append(result_entry)
                     continue
 
-                counts = selection_counts.get(param_name)
-                if counts is None:
-                    continue
-                weights = [1.0 / (c + 1) for c in counts]
-                selected_idx = random.choices(range(len(candidate_values)), weights=weights, k=1)[0]
-                selection_counts[param_name][selected_idx] += 1
-                assembled[param_name] = {"value": candidate_values[selected_idx], "type": param_type}
-
-            serialized_input = {k: safe_serialize(v["value"]) for k, v in assembled.items()}
-
-            result_entry = {
-                "测试输入": serialized_input,
-                "函数返回结果": None,
-                "函数运行状态": "pending"
-            }
-
-            # --- 参数解析 ---
-            evaluated_item = {}
-            eval_success = True
-            for param_name, entry in assembled.items():
+                # --- 运行 API (5s 超时保护，超时则跳过当前 API 剩余用例) ---
                 try:
-                    evaluated_item[param_name] = _eval_param_by_type(entry["value"], entry["type"])
-                except Exception as e:
-                    eval_success = False
-                    result_entry["函数运行状态"] = "error"
-                    result_entry["函数返回结果"] = f"参数解析错误 ({param_name}): {str(e)}"
+                    output = _run_with_timeout(run_api, 5, **evaluated_item)
+                    result_entry["函数运行状态"] = "success"
+                    result_entry["函数返回结果"] = safe_serialize(output)
+                except _ApiTimeoutError:
+                    result_entry["函数运行状态"] = "timeout"
+                    result_entry["函数返回结果"] = f"[TIMEOUT] API 执行超过 5 秒，疑似死循环或死锁"
+                    result_entry["bug_category"] = "timeout"
+                    result_entry["bug_location"] = "api_execution"
+                    api_run_results.append(result_entry)
+                    print(f"[{api_name}] 第 {k_idx+1}/{K} 个用例超时，跳过剩余用例，继续下一个 API")
                     break
+                except RecursionError:
+                    result_entry["函数运行状态"] = "recursion_bug"
+                    result_entry["函数返回结果"] = f"[RECURSION_BUG] API 执行或结果序列化时触发递归深度超限，疑似库中存在循环引用或自引用结构"
+                    result_entry["bug_category"] = "recursion"
+                    result_entry["bug_location"] = "api_execution"
+                    api_run_results.append(result_entry)
+                except Exception as e:
+                    result_entry["函数运行状态"] = "error"
+                    result_entry["函数返回结果"] = f"{type(e).__name__}: {str(e)}"
+                    api_run_results.append(result_entry)
+                else:
+                    api_run_results.append(result_entry)
 
-            if not eval_success:
-                api_run_results.append(result_entry)
-                continue
-
-            # --- 运行 API ---
-            try:
-                output = run_api(**evaluated_item)
-                result_entry["函数运行状态"] = "success"
-                result_entry["函数返回结果"] = safe_serialize(output)
-            except Exception as e:
-                result_entry["函数运行状态"] = "error"
-                result_entry["函数返回结果"] = f"{type(e).__name__}: {str(e)}"
-
-            api_run_results.append(result_entry)
+        except RecursionError:
+            api_run_results.append({
+                "测试输入": last_serialized_input,
+                "函数返回结果": f"[RECURSION_BUG] {api_name} 在第 {last_k + 1}/{K} 个用例时整体递归崩溃，跳过剩余用例",
+                "函数运行状态": "recursion_bug",
+                "bug_category": "recursion",
+                "bug_location": "api_loop",
+                "crashed_at_iteration": last_k
+            })
 
         # 3. 文件切分与保存逻辑
         j, path = save_and_paginate(api_name, api_run_results, path, root_path, lib_name, j, page_pattern)
         print(f"已完成 {api_name} 的API测试 (执行 {K} 次), 进度 {i+1}/{len(api_names)}")
+
+    # 4. V1 完成后自动提取 bug 报告
+    generate_bug_report(result_path=output_path)
+    generate_timeout_bug_report(result_path=output_path)
 
 
 
@@ -748,9 +863,9 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
     :param report_path: 差分报告输出路径
     """
     if baseline_path is None:
-        baseline_path = root_path + f'/haoyahui/documentation/results/{lib_name}_v1_baseline.json'
+        baseline_path = root_path + f'/documentation/results/{lib_name}_v1_baseline.json'
     if report_path is None:
-        report_path = root_path + f'/haoyahui/documentation/results/{lib_name}_diff_report.json'
+        report_path = root_path + f'/documentation/results/{lib_name}_diff_report.json'
 
     print(f"正在加载 V1 基线数据: {baseline_path} ...")
     v1_baseline = _load_paginated_baseline(baseline_path)
@@ -775,57 +890,74 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
         # 2. 读取 inputs_dict 获取参数类型标签 (code/literal)
         inputs_dict = read_json_api(api_name=api_name, file_path=f"../documentation/api_input/", read_mode="inputs")
 
-        # 3. 遍历 V1 记录的每个用例
-        for idx, case in enumerate(cases):
-            inputs_str_dict = case.get("测试输入", {})
-            v1_result = case.get("函数返回结果")
-            v1_status = case.get("函数运行状态")
+        # 3. 遍历 V1 记录的每个用例 (外层兜底: 防止遗漏的 RecursionError 导致整个 API 崩溃)
+        try:
+            for idx, case in enumerate(cases):
+                inputs_str_dict = case.get("测试输入", {})
+                v1_result = case.get("函数返回结果")
+                v1_status = case.get("函数运行状态")
 
-            # --- 反序列化输入参数：根据类型标签决定是否 eval ---
-            evaluated_item = {}
-            eval_success = True
-            for k, v in inputs_str_dict.items():
-                # 从 inputs_dict 获取参数类型
-                param_type = "literal"
-                if inputs_dict and k in inputs_dict:
-                    param_info = inputs_dict[k]
-                    if isinstance(param_info, dict):
-                        param_type = param_info.get("type", "literal")
+                # --- 反序列化输入参数：根据类型标签决定是否 eval ---
+                evaluated_item = {}
+                eval_success = True
+                for k, v in inputs_str_dict.items():
+                    # 从 inputs_dict 获取参数类型
+                    param_type = "literal"
+                    if inputs_dict and k in inputs_dict:
+                        param_info = inputs_dict[k]
+                        if isinstance(param_info, dict):
+                            param_type = param_info.get("type", "literal")
 
+                    try:
+                        evaluated_item[k] = _eval_param_by_type(v, param_type)
+                    except RecursionError:
+                        eval_success = False
+                        break
+                    except Exception:
+                        eval_success = False
+                        break
+
+                if not eval_success:
+                    continue
+
+                # --- 运行 V2 API (5s 超时保护) ---
+                v2_result = None
+                v2_status = "pending"
                 try:
-                    evaluated_item[k] = _eval_param_by_type(v, param_type)
-                except Exception:
-                    eval_success = False
+                    output = _run_with_timeout(run_api, 5, **evaluated_item)
+                    v2_result = safe_serialize(output)
+                    v2_status = "success"
+                except _ApiTimeoutError:
+                    v2_result = f"[TIMEOUT] API 执行超过 5 秒，疑似死循环或死锁"
+                    v2_status = "timeout"
+                except RecursionError:
+                    v2_result = f"[RECURSION_BUG] API 执行或结果序列化时触发递归深度超限，疑似库中存在循环引用或自引用结构"
+                    v2_status = "recursion_bug"
+                except Exception as e:
+                    v2_result = f"{type(e).__name__}: {str(e)}"
+                    v2_status = "error"
+
+                # --- 差分断言 ---
+                is_identical, reason = compare_results(v1_result, v2_result, v1_status, v2_status)
+
+                if not is_identical:
+                    diff_report.append({
+                        "api_name": api_name,
+                        "case_index": idx,
+                        "inputs": inputs_str_dict,
+                        "v1_status": v1_status,
+                        "v2_status": v2_status,
+                        "v1_output": v1_result,
+                        "v2_output": v2_result,
+                        "diff_reason": reason
+                    })
+
+                if v2_status == "timeout":
+                    print(f"[{api_name}] 第 {idx+1} 个用例超时，跳过剩余用例，继续下一个 API")
                     break
 
-            if not eval_success:
-                continue
-
-            # --- 运行 V2 API ---
-            v2_result = None
-            v2_status = "pending"
-            try:
-                output = run_api(**evaluated_item)
-                v2_result = safe_serialize(output)
-                v2_status = "success"
-            except Exception as e:
-                v2_result = f"{type(e).__name__}: {str(e)}"
-                v2_status = "error"
-
-            # --- 差分断言 ---
-            is_identical, reason = compare_results(v1_result, v2_result, v1_status, v2_status)
-
-            if not is_identical:
-                diff_report.append({
-                    "api_name": api_name,
-                    "case_index": idx,
-                    "inputs": inputs_str_dict,
-                    "v1_status": v1_status,
-                    "v2_status": v2_status,
-                    "v1_output": v1_result,
-                    "v2_output": v2_result,
-                    "diff_reason": reason
-                })
+        except RecursionError:
+            print(f"[{api_name}] 用例循环整体递归崩溃，跳过剩余用例，继续下一个 API")
 
     # 4. 输出差分报告
     print("\n" + "=" * 50)
@@ -850,8 +982,8 @@ def run_test_cases(K=100):
     - 无基线 → V1 模式：录制基准数据
     - 有基线 → V2 模式：执行差分测试并生成报告
     """
-    baseline_path = root_path + f'/haoyahui/documentation/results/{lib_name}_v1_baseline.json'
-    report_path = root_path + f'/haoyahui/documentation/results/{lib_name}_diff_report.json'
+    baseline_path = root_path + f'/documentation/results/{lib_name}_v1_baseline.json'
+    report_path = root_path + f'/documentation/results/{lib_name}_diff_report.json'
 
     if os.path.exists(baseline_path):
         print("=" * 50)
@@ -863,3 +995,5 @@ def run_test_cases(K=100):
         print("[V1 模式] 未检测到基线，运行基准录制...")
         print("=" * 50)
         run_test_cases_v1(K=K, output_path=baseline_path)
+        # 自动生成递归 bug 汇总报告
+        generate_bug_report(result_path=baseline_path)
