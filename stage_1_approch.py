@@ -38,31 +38,23 @@ def generate_api_conditions(api_names):
         # print("_________________________________________________________________________________________________________")
         # print(prompt_1)
         
-        # 调用线上 API 替代本地推理
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,  # 或者使用 deepseek-reasoner
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": prompt_1},
-                ],
-                stream=False
-            )
-            outputs_text = response.choices[0].message.content
-        except Exception as e:
-            print(f"[API 错误] {e}")
-            if i >= len(api_names): break
-            continue
+        outputs_text = call_llm_with_retry(
+            client, MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt_1},
+            ]
+        )
 
-        print("_________________________________________________________________________________________________________")
-        print(outputs_text)
+        # print("_________________________________________________________________________________________________________")
+        # print(outputs_text)
         
         # handle_output 需要根据线上输出微调（API 不会带入 prompt 本身，仅输出结果）
         # 传递 model_path 可能是为了在 handle_output 中做逻辑判断，予以保留
         api_conditions = extract_clean_json(outputs_text)
         
-        print("_________________________________________________________________________________________________________")
-        print(api_conditions)
+        # print("_________________________________________________________________________________________________________")
+        # print(api_conditions)
         
         # 存储至json
         path = root_path + f'/documentation/conditions/{lib_name}_conditions.json'
@@ -175,7 +167,12 @@ def check_condition_filter(api_names):
         function_name = fun_string
         i += 1
 
-        arg_combinations, j = get_all_combinations_from_json(function_name, j)
+        result = get_all_combinations_from_json(function_name, j)
+        if result == False:
+            print(f"[提示] {fun_string} 未在任何组合文件中找到，跳过")
+            if i >= len(api_names): break
+            continue
+        arg_combinations, j = result
         api_doc = get_doc(function_name)
         
         if api_doc == False:
@@ -188,20 +185,14 @@ def check_condition_filter(api_names):
             prompt_2 = generate_prompt_2(fun_string, arg_combination, api_def, api_doc)
             # prompt_2 = "".join(char for char in str(prompt_2) if char.isprintable() or char in "\n\t")
             # --- API 调用替代本地模型推理 ---
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a professional software testing assistant."},
-                        {"role": "user", "content": prompt_2},
-                    ],
-                    stream=False
-                )
-                outputs_text = response.choices[0].message.content
-                print(outputs_text)
-            except Exception as e:
-                print(f"[API 错误] 函数 {function_name} 在请求时发生异常: {e}")
-                outputs_text = "" # 或者根据业务逻辑选择 continue
+            outputs_text = call_llm_with_retry(
+                client, MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a professional software testing assistant."},
+                    {"role": "user", "content": prompt_2},
+                ]
+            )
+            # print(outputs_text)
 
             # 处理输出并判断
             # 注意：API 返回的 outputs_text 不包含 prompt，handle_output 逻辑可能需要适配
@@ -275,19 +266,13 @@ def generate_api_boundary(api_names):
                 prompt = generate_prompt_3(api_name, comb, arg_space, conditions["Parameter type"])
 
                 # --- 调用线上 API ---
-                try:
-                    response = client.chat.completions.create(
-                        model=MODEL,
-                        messages=[
-                            {"role": "system", "content": "You are a specialized AI for API boundary analysis and software testing."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        stream=False
-                    )
-                    outputs_text = response.choices[0].message.content
-                except Exception as e:
-                    print(f"[API 错误] 无法获取 {api_name} 的响应: {e}")
-                    outputs_text = ""
+                outputs_text = call_llm_with_retry(
+                    client, MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are a specialized AI for API boundary analysis and software testing."},
+                        {"role": "user", "content": prompt},
+                    ]
+                )
 
                 # 解析输出
                 api_boundary = extract_clean_json(outputs_text)
@@ -345,19 +330,13 @@ def generate_default_inputs(api_names):
         prompt = generate_prompt_4(api_name, conditions["Parameter type"], api_doc)
 
         # --- 调用线上 API ---
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a specialized AI assistant for generating default API inputs and test cases."},
-                    {"role": "user", "content": prompt},
-                ],
-                stream=False
-            )
-            outputs_text = response.choices[0].message.content
-        except Exception as e:
-            print(f"[API 错误] 函数 {api_name} 请求失败: {e}")
-            outputs_text = ""
+        outputs_text = call_llm_with_retry(
+            client, MODEL,
+            messages=[
+                {"role": "system", "content": "You are a specialized AI assistant for generating default API inputs and test cases."},
+                {"role": "user", "content": prompt},
+            ]
+        )
 
         # 使用之前修改好的 extract_clean_json 抽取 JSON
         api_default_input = extract_clean_json(outputs_text)
@@ -475,22 +454,16 @@ def generate_api_input(api_names):
 
         for key, value in arg_dict.items():
             prompt = generate_prompt_8(api_name, key, value, api_boundarys, api_doc, api_code)
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.0,
-                    top_p=1.0,
-                    seed=42,
-                    stream=False
-                )
-                outputs_text = response.choices[0].message.content
-            except Exception as e:
-                print(f"[API 错误] 函数 {api_name} 参数 {key} 请求失败: {e}")
-                outputs_text = ""
+            outputs_text = call_llm_with_retry(
+                client, MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.0,
+                top_p=1.0,
+                seed=42
+            )
 
             arg_input = extract_clean_list(outputs_text)
             # 为每个参数打上类型标签，区分 code 字符串和 literal 字符串
@@ -533,22 +506,16 @@ def generate_test_cases(api_names):
         api_doc = get_doc(function_name)
         prompt_6 = generate_prompt_6(api_name, api_def, api_doc)
 
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
-                    {"role": "user", "content": prompt_6},
-                ],
-                temperature=0.0,
-                top_p=1.0,
-                seed=42,
-                stream=False
-            )
-            outputs_text = response.choices[0].message.content
-        except Exception as e:
-            print(f"API请求失败 [{api_name}]: {e}")
-            continue
+        outputs_text = call_llm_with_retry(
+            client, MODEL,
+            messages=[
+                {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
+                {"role": "user", "content": prompt_6},
+            ],
+            temperature=0.0,
+            top_p=1.0,
+            seed=42
+        )
 
         case = outputs_text
 

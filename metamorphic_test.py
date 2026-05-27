@@ -24,7 +24,7 @@ from typing import Any, Callable, Optional
 
 # ── 复用现有模块 ─────────────────────────────────────────
 from config import root_path, lib_name, API_KEY, BASE_URL
-from stage_1_function import read_json_api, read_file, get_doc
+from stage_1_function import read_json_api, read_file, get_doc, call_llm_with_retry
 from stage_1_approch import _load_run_api, _eval_param_by_type
 
 
@@ -814,16 +814,14 @@ Rules:
 - Output ONLY the JSON object, no markdown, no explanation."""
 
         try:
-            response = client.chat.completions.create(
-                model="gpt-5.5",
+            text = call_llm_with_retry(
+                client, "gpt-5.5",
                 messages=[
                     {"role": "system", "content": "You generate metamorphic test decomposition plans. Output JSON only."},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.0,
-                stream=False,
+                temperature=0.0
             )
-            text = response.choices[0].message.content
 
             # 提取 JSON
             json_start = text.find("{")

@@ -1,22 +1,24 @@
-from config import *
-from stage_1_function import *
-from generate_prompt import *
-from stage_2_function import *
-
-import glom.grouping
-import requests
-from glom import core
-
-# ==========================================
-# 测试用例示例（需要在环境中安装对应的包）
-# ==========================================
-
-
-
-    
+from config import API_KEY, BASE_URL, MODEL
+from openai import OpenAI
+from stage_1_function import call_llm_with_retry
+import boolean
 
 if __name__ == "__main__":
+    client = OpenAI(
+        api_key=API_KEY,
+        base_url=BASE_URL
+    )
+    boolean.BooleanAlgebra.tokenize
+    print(f"Base URL: {BASE_URL}")
+    print(f"Model: {MODEL}")
+    print("Testing connection...")
 
-    print("正在清理未记录的API...")
-    # api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
-    #clean_undocumented_apis_from_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
+    result = call_llm_with_retry(
+        client, MODEL,
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello, please reply with 'OK' if you receive this message."},
+        ]
+    )
+    print(f"Response: {result}")
+    print("Connection test passed.")

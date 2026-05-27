@@ -86,7 +86,7 @@ def extract_logic_methods(package_name):
     return sorted(list(apis.items()), key=lambda x: x[0])
 
 if __name__ == "__main__":
-    target_lib = 'glom'  
+    target_lib = 'boolean'  
     
     apis = extract_logic_methods(target_lib)
     

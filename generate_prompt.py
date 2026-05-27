@@ -781,7 +781,7 @@ def generate_prompt_8(api_name, key, value, api_boundarys ,api_doc, api_code):
             (3) **Source-code-driven values**: Analyze {api_code} to find implicit checks, early returns,
                 or unchecked paths — design inputs that exploit these.
             (4) **No duplicates**: Each value in the output list must be unique.
-            (5) **Quantity**: Generate 8 to 20 test values. Fewer means insufficient coverage; more wastes budget.
+            (5) **Quantity**: Generate 10 to 30 test values. Fewer means insufficient coverage; more wastes budget.
             (6) **Single-parameter focus**: Only generate values for "{key}". Do not produce full API call code.
 
         ---

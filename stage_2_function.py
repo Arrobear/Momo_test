@@ -28,6 +28,8 @@ class JoernShell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="gbk",
+            errors="replace",
             shell=True
         )
 

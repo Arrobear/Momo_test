@@ -1,6 +1,8 @@
 from config import *
 from generate_prompt import *
 from generate_input import *
+import time
+
 '''
 **该文件内存储完成各种基本操作的函数**
 
@@ -13,7 +15,7 @@ extract_parameters_torch(api_doc)：根据torch函数文档获取参数列表
 extract_parameters_tf(api_doc)：根据tf函数文档获取参数列表
 
 generate_all_combinations(args)：获取所有参数的组合
- 
+
 filter_combinations(combinations, condition)：过滤不合法的参数组合
 
 read_file(file_path)：读取文件
@@ -25,7 +27,24 @@ get_api_conditions(fun_string, file_path)：获取JSON文件中的api_conditions
 append_filtered_combinations_to_json(path, fun_string, new_data)：向JSON文件中添加过滤后的参数组合
 
 add_log(log)：打印日志到控制台和文件
+
+call_llm_with_retry(client, model, messages, **kwargs)：带无限重试的LLM API调用
 '''
+
+
+def call_llm_with_retry(client, model, messages, **kwargs):
+    while True:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=False,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"[API 错误] {e}，3秒后重试...")
+            time.sleep(3)
 
 
 
@@ -264,7 +283,8 @@ def get_all_parameters(api_name: str):
         data = json.load(file)
     
     if api_name not in data:
-        raise KeyError(f"API '{api_name}' not found in JSON file")
+        print(f"[提示] API '{api_name}' 未在 conditions 文件中找到，跳过")
+        return []
     
     if "Parameter type" not in data[api_name]:
         return []
@@ -734,8 +754,8 @@ def get_all_combinations_from_json(api_name, j):
             # 提取api_name项
             
             args_combinations = data.get(api_name)
-            
-        except KeyError:
+
+        except (KeyError, FileNotFoundError):
             return False
 
         if args_combinations == None:
@@ -1265,7 +1285,7 @@ def cut_combinations(api_names):
             condition = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
             # print(condition)
             if not condition:
-                print(11111111111111111111)
+                # print(11111111111111111111)
                 continue
             all_param = []
             for key in condition["Parameter type"]:
@@ -1304,7 +1324,7 @@ def cut_combinations(api_names):
             else:
                 save_api_inputs(api_name, cut_combination, path)
 
-            print(f"进度"+str(i)+"/"+str(len(api_names)))
+            print(f"进度"+str(i+1)+"/"+str(len(api_names)))
             # if i == 0:
             # break
 
