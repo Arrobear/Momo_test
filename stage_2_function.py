@@ -8,8 +8,10 @@ from stage_1_function import *
 '''
 
 
-TORCH_PATH = Path("C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1") # 修改为本地 PyTorch 源码根目录
-YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml"
+# 通用库配置 - 根据 config.py 中的 lib_name 动态设置
+# PyTorch 特定配置（仅当 lib_name == "torch" 时使用）
+TORCH_PATH = Path("C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1") if lib_name == "torch" else None
+YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml" if TORCH_PATH else None
 
 
 # =====================================================
@@ -88,13 +90,13 @@ def parse_scala_list(scala_output: str):
 
 
 # =====================================================
-# Torch API 分类与 Guard 抽取
+# 通用 API 分类与 Guard 抽取
 # =====================================================
-# 判断 torch库中的 API 类型
-def torch_api_classify(api_name: str) -> str:
+# 判断任意库中的 API 类型
+def generic_api_classify(api_name: str) -> str:
     """
-    强化版 PyTorch API 分类器。
-    支持：Python 层 + C++ 层 + YAML fallback。
+    通用 API 分类器，支持任意第三方库。
+    根据 Python 反射机制判断 API 类型。
     """
     try:
         mod_name, attr_name = api_name.rsplit(".", 1)
@@ -103,28 +105,57 @@ def torch_api_classify(api_name: str) -> str:
     except Exception:
         obj = None
 
+    # 1️⃣ 类
+    if obj and inspect.isclass(obj):
+        return "class"
+
+    # 2️⃣ 普通 Python 函数
+    if obj and inspect.isfunction(obj):
+        return "function"
+
+    # 3️⃣ 内建函数 (builtin_function_or_method)
+    if obj and inspect.isbuiltin(obj):
+        return "builtin"
+
+    # 4️⃣ 方法描述符 (method_descriptor)
+    if obj and inspect.ismethoddescriptor(obj):
+        return "method"
+
+    # 5️⃣ 可调用对象但不是函数/类
+    if obj and callable(obj):
+        return "callable"
+
+    # 6️⃣ 全部失败，返回 unknown
+    return "unknown"
+
+# 为了向后兼容，保留 torch_api_classify 作为别名
+def torch_api_classify(api_name: str) -> str:
+    """
+    PyTorch 专用 API 分类器（增强版）。
+    在通用分类基础上增加 PyTorch 特定逻辑。
+    """
+    # 如果不是 torch 库，直接使用通用分类
+    if not api_name.startswith("torch."):
+        return generic_api_classify(api_name)
+
+    try:
+        mod_name, attr_name = api_name.rsplit(".", 1)
+        mod = importlib.import_module(mod_name)
+        obj = getattr(mod, attr_name)
+    except Exception:
+        obj = None
+
+    # PyTorch 特定规则
     # 1️⃣ nn.functional 明确为 function
     if "torch.nn.functional" in api_name:
         return "function"
 
-    # 2️⃣ 类
-    if obj and inspect.isclass(obj):
-        return "class"
-
-    # 3️⃣ 工厂函数
+    # 2️⃣ 工厂函数
     factory_names = {"ones", "zeros", "empty", "full", "arange", "randn", "rand", "eye", "linspace"}
     if attr_name in factory_names:
         return "factory"
 
-    # 4️⃣ 普通 Python 函数
-    if obj and inspect.isfunction(obj):
-        return "function"
-
-    # 5️⃣ Tensor 实例方法
-    if obj and inspect.ismethoddescriptor(obj):
-        return "method"
-
-    # 6️⃣ 尝试识别内建函数 / OpOverload
+    # 3️⃣ OpOverload 类型
     obj_type = str(type(obj))
     if obj and ("OpOverload" in obj_type or "OpOverloadPacket" in obj_type):
         try:
@@ -135,31 +166,37 @@ def torch_api_classify(api_name: str) -> str:
             return "builtin"
         return "builtin"
 
-    # 7️⃣ fallback：从 native_functions.yaml 查找
-    try:
-        import yaml
-        func_target = attr_name.split(".")[-1]
-        with open(YAML_PATH, "r", encoding="utf-8") as f:
-            yaml_docs = yaml.safe_load(f)
-        for entry in yaml_docs:
-            func = entry.get("func", "")
-            if func.startswith(func_target + "("):
-                return "builtin"
-    except Exception:
-        pass
+    # 4️⃣ 从 native_functions.yaml 查找（仅当 YAML 文件存在时）
+    if YAML_PATH and YAML_PATH.exists():
+        try:
+            import yaml
+            func_target = attr_name.split(".")[-1]
+            with open(YAML_PATH, "r", encoding="utf-8") as f:
+                yaml_docs = yaml.safe_load(f)
+            for entry in yaml_docs:
+                func = entry.get("func", "")
+                if func.startswith(func_target + "("):
+                    return "builtin"
+        except Exception:
+            pass
 
-    # 8️⃣ torch._C / _ops 注册的直接算子
+    # 5️⃣ torch._C / _ops 注册的直接算子
     if "torch._C" in api_name or "torch._ops" in api_name:
         return "builtin"
 
-    # 9️⃣ 全部失败，返回 unknown
-    return "unknown"
+    # 6️⃣ 使用通用分类
+    return generic_api_classify(api_name)
 
 def torch_find_cpp_name(api_name: str) -> str:
     """
     从 native_functions.yaml 提取 C++ 实现函数名。
     支持 structured_delegate / autogen / CompositeAutograd 等。
+    仅适用于 PyTorch，其他库返回 None。
     """
+    # 如果不是 torch 或 YAML 文件不存在，返回 None
+    if not api_name.startswith("torch.") or not YAML_PATH or not YAML_PATH.exists():
+        return None
+
     func_target = api_name.split(".")[-1]
     # print(func_target)
     with open(YAML_PATH, "r", encoding="utf-8") as f:
@@ -359,9 +396,10 @@ def torch_extract_cpp_guards(cpp_func_name: str) -> list:
     # print(f"[CPP GUARDS] Extracted {len(cpp_guards)} guards from {cpp_func_name}")
     return cpp_guards
 
-def torch_extract_python_guards(api_name: str) -> list:
+def generic_extract_python_guards(api_name: str) -> list:
     """
-    抽取 Python 层 guards（正/反路径均提取）
+    通用 Python 层 guards 提取（正/反路径均提取）
+    适用于任意第三方库。
     返回:
         python_guards: list[str]
     """
@@ -418,8 +456,8 @@ def torch_extract_python_guards(api_name: str) -> list:
             self.generic_visit(node)
 
         def visit_Call(self, node):
-            # torch._assert, _check_* 等函数调用
-            if isinstance(node.func, ast.Name) and node.func.id in {"_assert", "_check"}:
+            # 通用断言函数调用（_assert, _check, check, validate 等）
+            if isinstance(node.func, ast.Name) and node.func.id in {"_assert", "_check", "check", "validate"}:
                 try:
                     cond = ast.unparse(node.args[0])
                 except Exception:
@@ -433,22 +471,70 @@ def torch_extract_python_guards(api_name: str) -> list:
     python_guards = list({g.strip() for g in python_guards if g.strip()})
     return python_guards
 
+# 为了向后兼容，保留 torch_extract_python_guards 作为别名
+def torch_extract_python_guards(api_name: str) -> list:
+    """
+    抽取 Python 层 guards（正/反路径均提取）
+    返回:
+        python_guards: list[str]
+    """
+    return generic_extract_python_guards(api_name)
+
+def generic_extract_function_guards(api_name: str):
+    """
+    抽取 function 类型 API 的 guards。
+    通用版本：仅包含 Python 层（大多数第三方库没有 C++ 层）。
+    """
+    python_guards = generic_extract_python_guards(api_name)
+
+    # 对于非 PyTorch 库，通常没有 C++ 层
+    cpp_guards = []
+
+    # 如果是 PyTorch，尝试提取 C++ guards
+    if api_name.startswith("torch."):
+        fun_cpp_name = torch_find_cpp_name(api_name)
+        if fun_cpp_name:
+            try:
+                cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+            except Exception as e:
+                print(f"[WARN] Failed to extract C++ guards for {api_name}: {e}")
+
+    return {
+        "python_guards": python_guards,
+        "cpp_guards": cpp_guards
+    }
+
 def torch_extract_function_guards(api_name: str):
     """
     抽取 function 类型 API 的 guards。
     包含 Python 层 + C++ 层。
     """
-    python_guards = torch_extract_python_guards(api_name)
+    return generic_extract_function_guards(api_name)
 
+def generic_extract_builtin_guards(api_name: str):
+    """
+    抽取 builtin 类型 API 的 guards。
+    通用版本：优先尝试 Python 层提取。
+    """
+    python_guards = []
     cpp_guards = []
-    fun_cpp_name = torch_find_cpp_name(api_name)
-    if fun_cpp_name:
+
+    # 🧩 尝试 Python 层提取（某些 builtin 实际有包装）
+    try:
+        python_guards = generic_extract_python_guards(api_name)
+    except Exception as e:
+        #print(f"[WARN] Python guard extraction failed for builtin {api_name}: {e}")
+        python_guards = []
+
+    # 🧩 提取 C++ 层（仅 PyTorch）
+    if api_name.startswith("torch."):
         try:
-            cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+            fun_cpp_name = torch_find_cpp_name(api_name)
+            if fun_cpp_name:
+                cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
         except Exception as e:
-            print(f"[WARN] Failed to extract C++ guards for {api_name}: {e}")
-    #else:
-        # print(f"[WARN] No C++ mapping found for function API: {api_name}")
+            # print(f"[WARN] C++ guard extraction failed for builtin {api_name}: {e}")
+            cpp_guards = []
 
     return {
         "python_guards": python_guards,
@@ -461,26 +547,24 @@ def torch_extract_builtin_guards(api_name: str):
     优化：同时尝试 Python 层提取（若失败或为空则忽略），
     并始终提取 C++ 层 TORCH_CHECK / 控制语句。
     """
-    python_guards = []
+    return generic_extract_builtin_guards(api_name)
+
+def generic_extract_factory_guards(api_name: str):
+    """
+    抽取 factory 类型 API 的 guards（如 torch.zeros / torch.arange）。
+    通用版本：一般无复杂 Python 逻辑，但可能有参数检查。
+    """
+    python_guards = generic_extract_python_guards(api_name)
+
     cpp_guards = []
-
-    # 🧩 尝试 Python 层提取（某些 builtin 实际有包装）
-    try:
-        python_guards = torch_extract_python_guards(api_name)
-    except Exception as e:
-        #print(f"[WARN] Python guard extraction failed for builtin {api_name}: {e}")
-        python_guards = []
-
-    # 🧩 提取 C++ 层
-    try:
+    # 仅 PyTorch 尝试提取 C++ guards
+    if api_name.startswith("torch."):
         fun_cpp_name = torch_find_cpp_name(api_name)
         if fun_cpp_name:
-            cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
-        # else:
-        #     print(f"[WARN] No C++ mapping found for builtin API: {api_name}")
-    except Exception as e:
-        # print(f"[WARN] C++ guard extraction failed for builtin {api_name}: {e}")
-        cpp_guards = []
+            try:
+                cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
+            except Exception as e:
+                print(f"[WARN] Failed to extract C++ guards for factory {api_name}: {e}")
 
     return {
         "python_guards": python_guards,
@@ -492,27 +576,12 @@ def torch_extract_factory_guards(api_name: str):
     抽取 factory 类型 API 的 guards（如 torch.zeros / torch.arange）。
     一般无复杂 Python 逻辑，但可能有参数检查。
     """
-    python_guards = torch_extract_python_guards(api_name)
+    return generic_extract_factory_guards(api_name)
 
-    cpp_guards = []
-    fun_cpp_name = torch_find_cpp_name(api_name)
-    if fun_cpp_name:
-        try:
-            cpp_guards = torch_extract_cpp_guards(fun_cpp_name)
-        except Exception as e:
-            print(f"[WARN] Failed to extract C++ guards for factory {api_name}: {e}")
-    else:
-        print(f"[WARN] No C++ mapping found for factory API: {api_name}")
-
-    return {
-        "python_guards": python_guards,
-        "cpp_guards": cpp_guards
-    }
-
-def torch_extract_class_guards(api_name: str):
+def generic_extract_class_guards(api_name: str):
     """
     抽取 class 类型 API 的 guards（Python 层 + C++ 层）
-    递归追踪 forward 内部 helper（如 _conv_forward），保证 Python/C++ guard 可获取
+    通用版本：递归追踪 forward/call/__init__ 等方法内部 helper
     返回:
         {
             "python_guards": [...],
@@ -567,81 +636,79 @@ def torch_extract_class_guards(api_name: str):
         class CallVisitor(ast.NodeVisitor):
             def __init__(self):
                 self.calls = []
+
             def visit_Call(self, node):
                 if isinstance(node.func, ast.Attribute):
-                    if isinstance(node.func.value, ast.Name):
-                        full_name = f"{node.func.value.id}.{node.func.attr}"
-                    else:
-                        full_name = node.func.attr
-                    self.calls.append(full_name)
+                    if isinstance(node.func.value, ast.Name) and node.func.value.id == "self":
+                        self.calls.append(node.func.attr)
                 elif isinstance(node.func, ast.Name):
-                    self.calls.append(node.func.id)
-                self.generic_visit(node)
-
-        cv = CallVisitor()
-        cv.visit(tree)
-
-        for call in cv.calls:
-            try:
-                # class 内部 helper (self.xxx)
-                if call.startswith("self."):
-                    inner_name = call.split(".", 1)[1]
-                    _analyze_method(inner_name)
-
-                # functional / torch
-                elif call.startswith("F.") or call.startswith("torch."):
-                    from_module = "torch.nn.functional" if call.startswith("F.") else "torch"
-                    func_name = call.split(".")[-1]
-                    full_api_name = f"{from_module}.{func_name}"
-
-                    try:
-                        mod = importlib.import_module(from_module)
-                        py_obj = getattr(mod, func_name, None)
-                    except Exception:
-                        py_obj = None
-
-                    if py_obj is not None:
-                        # -------- (1) 尝试解析 Python 源码 --------
+                    func_name = node.func.id
+                    # 尝试查找 C++ 函数（仅 PyTorch）
+                    if api_name.startswith("torch."):
                         try:
-                            src_func = inspect.getsource(py_obj)
-                            src_func = textwrap.dedent(src_func)
-                            tree_func = ast.parse(src_func)
-
-                            for node in ast.walk(tree_func):
-                                if isinstance(node, ast.If):
-                                    try:
-                                        cond = ast.unparse(node.test)
-                                    except Exception:
-                                        cond = ast.dump(node.test)
-                                    python_guards.append(cond)
+                            cpp_name = torch_find_cpp_name(f"{api_name}.{func_name}")
+                            if cpp_name:
+                                cpp_guards.extend(torch_extract_cpp_guards(cpp_name))
                         except Exception:
                             pass
+                self.generic_visit(node)
 
-                        # -------- (2) unwrap boolean_dispatch --------
-                        visited_py = set()
-                        def unwrap(f):
-                            if f in visited_py or f is None:
-                                return f
-                            visited_py.add(f)
-                            for attr in ["if_true", "if_false"]:
-                                if hasattr(f, attr):
-                                    inner_f = getattr(f, attr)
-                                    fun_cpp_name = torch_find_cpp_name(full_api_name)
-                                    cpp_guards.extend(torch_extract_cpp_guards(fun_cpp_name))
-                                    unwrap(inner_f)
-                            return f
-                        unwrap(py_obj)
+        visitor = CallVisitor()
+        visitor.visit(tree)
 
-                    # -------- (3) 最后调用 C++ guard 提取 --------
-                    fun_cpp_name = torch_find_cpp_name(full_api_name)
-                    cpp_guards.extend(torch_extract_cpp_guards(fun_cpp_name))
+        # 递归分析 helper 方法
+        for call in visitor.calls:
+            _analyze_method(call)
 
-            except Exception:
-                continue
+    # -------- 2. 从 forward/__call__/__init__ 开始 --------
+    for entry_method in ["forward", "__call__", "__init__"]:
+        if hasattr(cls_obj, entry_method):
+            _analyze_method(entry_method)
 
-    # -------- 入口: forward --------
-    if hasattr(cls_obj, "forward"):
-        _analyze_method("forward")
+    # 去重
+    python_guards = list({g.strip() for g in python_guards if g.strip()})
+    cpp_guards = list({g.strip() for g in cpp_guards if g.strip()})
+
+    return {"python_guards": python_guards, "cpp_guards": cpp_guards}
+
+def torch_extract_class_guards(api_name: str):
+    """
+    抽取 class 类型 API 的 guards（Python 层 + C++ 层）
+    递归追踪 forward 内部 helper（如 _conv_forward），保证 Python/C++ guard 可获取
+    返回:
+        {
+            "python_guards": [...],
+            "cpp_guards": [...]
+        }
+    """
+    return generic_extract_class_guards(api_name)
+
+def generic_extract_unknown_guards(api_name: str):
+    """
+    对 unknown 类型也尽力而为：
+    - 先尝试 Python 层 guard 提取（失败忽略）；
+    - 再尝试通过 YAML 映射到 C++ 实现并提取 C++ guards（失败忽略，仅 PyTorch）。
+    """
+    python_guards = []
+    cpp_guards = []
+
+    # Python 层（尽力而为）
+    try:
+        python_guards = generic_extract_python_guards(api_name) or []
+    except Exception:
+        python_guards = []
+
+    # C++ 层（尝试找到对应实现，仅 PyTorch）
+    if api_name.startswith("torch."):
+        try:
+            fun_cpp_name = torch_find_cpp_name(api_name)
+            if fun_cpp_name:
+                try:
+                    cpp_guards = torch_extract_cpp_guards(fun_cpp_name) or []
+                except Exception as e:
+                    print(f"[WARN] C++ guard extraction failed for unknown {api_name}: {e}")
+        except Exception as e:
+            print(f"[WARN] torch_find_cpp_name failed for unknown {api_name}: {e}")
 
     return {"python_guards": python_guards, "cpp_guards": cpp_guards}
 
@@ -651,32 +718,7 @@ def torch_extract_unknown_guards(api_name: str):
     - 先尝试 Python 层 guard 提取（失败忽略）；
     - 再尝试通过 YAML 映射到 C++ 实现并提取 C++ guards（失败忽略）。
     """
-    python_guards = []
-    cpp_guards = []
-
-
-    # Python 层（尽力而为）
-    try:
-        python_guards = torch_extract_python_guards(api_name) or []
-    except Exception as e:
-        #print(f"[WARN] Python guard extraction failed for unknown {api_name}: {e}")
-        python_guards = []
-
-
-    # C++ 层（尝试找到对应实现）
-    try:
-        fun_cpp_name = torch_find_cpp_name(api_name)
-        if fun_cpp_name:
-            try:
-                cpp_guards = torch_extract_cpp_guards(fun_cpp_name) or []
-            except Exception as e:
-                print(f"[WARN] C++ guard extraction failed for unknown {api_name}: {e}")
-        else:
-            print(f"[WARN] No C++ mapping found for unknown API: {api_name}")
-    except Exception as e:
-        print(f"[WARN] torch_find_cpp_name failed for unknown {api_name}: {e}")
-
-    return {"python_guards": python_guards, "cpp_guards": cpp_guards}
+    return generic_extract_unknown_guards(api_name)
 
 def torch_extract_guards(api_name: str):
     """
@@ -1361,13 +1403,21 @@ def merge_python_cpp_paths(py_paths: list, cpp_paths: list, api_name: str):
 # =====================================================
 # 获取源码
 # =====================================================
-def torch_extract_api_source(api_name: str):
+def generic_extract_api_source(api_name: str):
     """
-    提取给定 PyTorch API 的 Python 源码和对应 C++ 源码。
+    提取给定 API 的 Python 源码和对应 C++ 源码（如果有）。
+    通用版本：支持任意第三方库。
     统一保存到一个 JSON 文件，key 为 api_name。
     """
     output_path = f"../documentation/api_src_code/{lib_name}_api_sources.json"
-    pytorch_root = "C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1"
+
+    # 获取库的根目录（尝试从已安装的包中获取）
+    try:
+        lib_root_module = api_name.split(".")[0]
+        lib_module = importlib.import_module(lib_root_module)
+        lib_root = Path(lib_module.__file__).parent.parent if hasattr(lib_module, '__file__') else None
+    except Exception:
+        lib_root = None
 
     # ========== 1️⃣ Python 源码提取 ==========
     py_file = None
@@ -1377,7 +1427,15 @@ def torch_extract_api_source(api_name: str):
         target = eval(api_name)  # 反射函数对象
         src_file = inspect.getsourcefile(target)
         src_lines, start_line = inspect.getsourcelines(target)
-        py_file = os.path.relpath(src_file, pytorch_root)
+
+        # 计算相对路径
+        if lib_root and src_file:
+            try:
+                py_file = os.path.relpath(src_file, lib_root)
+            except ValueError:
+                py_file = src_file
+        else:
+            py_file = src_file
 
         # 去掉 docstring
         src_code = "".join(src_lines)
@@ -1396,45 +1454,46 @@ def torch_extract_api_source(api_name: str):
     except Exception as e:
         print(f"[WARN] 无法提取 Python 源码: {api_name}, error={e}")
 
-    # ========== 2️⃣ C++ 源码提取 ==========
-    cpp_func_name = torch_find_cpp_name(api_name)
+    # ========== 2️⃣ C++ 源码提取（仅 PyTorch）==========
+    cpp_func_name = None
     cpp_file, cpp_start, cpp_end, cpp_code = None, None, None, ""
 
-    joern = JoernShell(joern_bat_path)
-    joern.send_command(f'open("{joern_project}")')
+    if api_name.startswith("torch.") and TORCH_PATH:
+        cpp_func_name = torch_find_cpp_name(api_name)
 
-    #print(f"[CPP] 提取 {cpp_func_name} 的源码")
+        if cpp_func_name:
+            joern = JoernShell(joern_bat_path)
+            joern.send_command(f'open("{joern_project}")')
 
-    query_meta = f'''
-        cpg.method.name("{cpp_func_name}").foreach {{
-        m =>
-            val fn  = m.filename
-            val ln1 = m.lineNumber.getOrElse(-1).toString
-            val ln2 = m.lineNumberEnd.getOrElse(-1).toString
-            println("META_BEGIN" + fn + "||" + ln1 + "||" + ln2 + "META_END")
-        }}
-        '''
-    meta_raw = joern.send_command(query_meta)
-    m = re.search(r'META_BEGIN(.*?)META_END', meta_raw, re.DOTALL)
-    if m:
-        file_rel, start_line_s, end_line_s = m.group(1).split("||")
-        cpp_file = file_rel.strip().replace("\\", "/")
-        cpp_start, cpp_end = int(start_line_s), int(end_line_s)
-        abs_cpp = (Path(pytorch_root) / cpp_file).resolve()
-        if abs_cpp.exists():
-            with open(abs_cpp, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
-                cpp_code = "".join(lines[cpp_start-1:cpp_end])
-        else:
-            #print(f"[WARN] 找不到 {abs_cpp}，回退为 Joern 输出")
-            code_raw = joern.send_command(f'cpg.method.name("{cpp_func_name}").code.l')
-            ansi = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            cpp_code = "\n".join([
-                l.strip() for l in ansi.sub('', code_raw).splitlines()
-                if l.strip() and not l.startswith("joern>")
-            ])
+            query_meta = f'''
+                cpg.method.name("{cpp_func_name}").foreach {{
+                m =>
+                    val fn  = m.filename
+                    val ln1 = m.lineNumber.getOrElse(-1).toString
+                    val ln2 = m.lineNumberEnd.getOrElse(-1).toString
+                    println("META_BEGIN" + fn + "||" + ln1 + "||" + ln2 + "META_END")
+                }}
+                '''
+            meta_raw = joern.send_command(query_meta)
+            m = re.search(r'META_BEGIN(.*?)META_END', meta_raw, re.DOTALL)
+            if m:
+                file_rel, start_line_s, end_line_s = m.group(1).split("||")
+                cpp_file = file_rel.strip().replace("\\", "/")
+                cpp_start, cpp_end = int(start_line_s), int(end_line_s)
+                abs_cpp = (TORCH_PATH / cpp_file).resolve()
+                if abs_cpp.exists():
+                    with open(abs_cpp, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                        cpp_code = "".join(lines[cpp_start-1:cpp_end])
+                else:
+                    code_raw = joern.send_command(f'cpg.method.name("{cpp_func_name}").code.l')
+                    ansi = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                    cpp_code = "\n".join([
+                        l.strip() for l in ansi.sub('', code_raw).splitlines()
+                        if l.strip() and not l.startswith("joern>")
+                    ])
 
-    joern.send_command("exit")
+            joern.send_command("exit")
 
     # ========== 3️⃣ 汇总并保存 ==========
     api_data = {
@@ -1453,23 +1512,33 @@ def torch_extract_api_source(api_name: str):
         }
     }
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    if os.path.exists(output_path):
+    # 加载已有数据
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if output_file.exists():
         try:
-            with open(output_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except:
-            data = {}
+            with open(output_file, "r", encoding="utf-8") as f:
+                all_sources = json.load(f)
+        except Exception:
+            all_sources = {}
     else:
-        data = {}
+        all_sources = {}
 
-    data[api_name] = api_data
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    # 更新并保存
+    all_sources[api_name] = api_data
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(all_sources, f, indent=2, ensure_ascii=False)
 
     # print(f"[DONE] {api_name} 源码已保存至 {output_path}")
     return api_data
+
+def torch_extract_api_source(api_name: str):
+    """
+    提取给定 PyTorch API 的 Python 源码和对应 C++ 源码。
+    统一保存到一个 JSON 文件，key 为 api_name。
+    """
+    return generic_extract_api_source(api_name)
 
 
 # 在当前文件夹生成所有 API 的 guards 和路径枚举结果

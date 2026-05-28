@@ -1,7 +1,7 @@
 import importlib
 import inspect
 import warnings
-
+from config import lib_name
 
 def extract_logic_methods(package_name):
     """
@@ -86,7 +86,7 @@ def extract_logic_methods(package_name):
     return sorted(list(apis.items()), key=lambda x: x[0])
 
 if __name__ == "__main__":
-    target_lib = 'boolean'  
+    target_lib = lib_name 
     
     apis = extract_logic_methods(target_lib)
     

@@ -46,17 +46,17 @@ model_path = root_path + "/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 
 import glom
 import boolean
+import mimesis
 
-
-lib_name = "boolean"  # 库名称
-lib_gitname = "boolean.py"
-test_version = ['8a44383','c7349bb']
+lib_name = "mimesis"  # 库名称
+lib_gitname = "mimesis"
+test_version = ['2caafb2','812ad3b']
 
 # test.cpp
 # joern_project  = "pytorch-2.5.1" # joern 项目名
 # {lib_name}_{commit_hash}
 conmmit_hash = "0da6086c"
-joern_project  = "boolean_8a44383" # joern 项目名
+joern_project  = "mimesis_2caafb2" # joern 项目名
 joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
 
 gpu_str = os.environ.get("FREE_GPUS", "")
