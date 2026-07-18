@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 蜕变测试模块 (Metamorphic Testing)
 
@@ -23,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 # ── 复用现有模块 ─────────────────────────────────────────
-from config import root_path, lib_name, API_KEY, BASE_URL
+from config import root_path, lib_name, API_KEY, BASE_URL, make_client
 from stage_1_function import read_json_api, read_file, get_doc, call_llm_with_retry
 from stage_1_approch import _load_run_api, _eval_param_by_type
 
@@ -1214,8 +1215,7 @@ def run_metamorphic_tests(
 
     decompose_plans = {}
     if use_llm_decompose:
-        from openai import OpenAI
-        client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+        client = make_client()
         api_names = read_file(f"../documentation/lib_api/{lib}_APIdef.txt")
         conditions_path = (
             f"{root_path}/haoyahui/documentation/conditions/"

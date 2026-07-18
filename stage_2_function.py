@@ -98,6 +98,10 @@ def generic_api_classify(api_name: str) -> str:
     通用 API 分类器，支持任意第三方库。
     根据 Python 反射机制判断 API 类型。
     """
+    if USE_SOURCE_RESOLVER:
+        from source_resolver import get_api_type
+        return get_api_type(api_name, lib_gitname)
+
     try:
         mod_name, attr_name = api_name.rsplit(".", 1)
         mod = importlib.import_module(mod_name)
@@ -405,20 +409,26 @@ def generic_extract_python_guards(api_name: str) -> list:
     """
     python_guards = []
 
-    # -------- 1. 找到 Python 对象 --------
-    try:
-        mod_name, attr_name = api_name.rsplit(".", 1)
-        mod = __import__(mod_name, fromlist=[attr_name])
-        py_obj = getattr(mod, attr_name)
-    except Exception:
-        return python_guards  # 找不到 API，返回空
+    if USE_SOURCE_RESOLVER:
+        from source_resolver import get_source_ast
+        tree = get_source_ast(api_name, lib_gitname)
+        if tree is None:
+            return python_guards
+    else:
+        # -------- 1. 找到 Python 对象 --------
+        try:
+            mod_name, attr_name = api_name.rsplit(".", 1)
+            mod = __import__(mod_name, fromlist=[attr_name])
+            py_obj = getattr(mod, attr_name)
+        except Exception:
+            return python_guards  # 找不到 API，返回空
 
-    # -------- 2. 获取源码并构建 AST --------
-    try:
-        src = inspect.getsource(py_obj)
-        tree = ast.parse(src)
-    except (OSError, TypeError, SyntaxError):
-        return python_guards
+        # -------- 2. 获取源码并构建 AST --------
+        try:
+            src = inspect.getsource(py_obj)
+            tree = ast.parse(src)
+        except (OSError, TypeError, SyntaxError):
+            return python_guards
 
     # -------- 3. 遍历 AST 提取条件（增强版）--------
     class GuardVisitor(ast.NodeVisitor):
@@ -590,6 +600,59 @@ def generic_extract_class_guards(api_name: str):
     """
     python_guards = []
     cpp_guards = []
+
+    if USE_SOURCE_RESOLVER:
+        from source_resolver import resolve_api_source
+        info = resolve_api_source(api_name, lib_gitname)
+        if info is None or info["api_type"] != "class":
+            return {"python_guards": python_guards, "cpp_guards": cpp_guards}
+
+        cls_node = info["node"]
+        file_path = Path(info["file"])
+        file_source = file_path.read_text(encoding="utf-8", errors="replace")
+        file_lines = file_source.splitlines(keepends=True)
+
+        def _get_method_source(method_name):
+            for child in ast.iter_child_nodes(cls_node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == method_name:
+                    start = child.lineno
+                    end = getattr(child, "end_lineno", start)
+                    code = "".join(file_lines[start - 1:end])
+                    return textwrap.dedent(code)
+            return None
+
+        visited = set()
+
+        def _analyze_method(method_name):
+            nonlocal python_guards, cpp_guards
+            if method_name in visited:
+                return
+            visited.add(method_name)
+
+            src = _get_method_source(method_name)
+            if src is None:
+                return
+
+            try:
+                src = textwrap.dedent(src)
+                tree = ast.parse(src)
+            except Exception:
+                return
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.If):
+                    try:
+                        cond = ast.unparse(node.test)
+                    except Exception:
+                        cond = ast.dump(node.test)
+                    python_guards.append(cond)
+
+        for entry_method in ["forward", "__call__", "__init__"]:
+            _analyze_method(entry_method)
+
+        python_guards = list({g.strip() for g in python_guards if g.strip()})
+        cpp_guards = list({g.strip() for g in cpp_guards if g.strip()})
+        return {"python_guards": python_guards, "cpp_guards": cpp_guards}
 
     # -------- 1. 加载 class --------
     try:
@@ -973,15 +1036,25 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
     """
     normalized_guards = api_data.get("normalized_guards", {}).get("python", [])
 
-    try:
-        mod_name, attr_name = api_name.rsplit('.', 1)
-        mod = __import__(mod_name, fromlist=[attr_name])
-        py_obj = getattr(mod, attr_name)
-        src = inspect.getsource(py_obj)
-        tree = ast.parse(src)
-    except Exception as e:
-        #f"[WARN] enumerate_python_paths: cannot load source for {api_name}: {e}")
-        return []
+    if USE_SOURCE_RESOLVER:
+        from source_resolver import resolve_api_source
+        info = resolve_api_source(api_name, lib_gitname)
+        if info is None:
+            return []
+        try:
+            tree = ast.parse(info["source_code"])
+        except SyntaxError:
+            return []
+    else:
+        try:
+            mod_name, attr_name = api_name.rsplit('.', 1)
+            mod = __import__(mod_name, fromlist=[attr_name])
+            py_obj = getattr(mod, attr_name)
+            src = inspect.getsource(py_obj)
+            tree = ast.parse(src)
+        except Exception as e:
+            #f"[WARN] enumerate_python_paths: cannot load source for {api_name}: {e}")
+            return []
 
     func_node = None
     for node in ast.walk(tree):
@@ -1410,6 +1483,57 @@ def generic_extract_api_source(api_name: str):
     统一保存到一个 JSON 文件，key 为 api_name。
     """
     output_path = f"../documentation/api_src_code/{lib_name}_api_sources.json"
+
+    if USE_SOURCE_RESOLVER:
+        from source_resolver import resolve_api_source
+        info = resolve_api_source(api_name, lib_gitname)
+        if info is None:
+            api_data = {
+                "python": {
+                    "file": None,
+                    "start_line": None,
+                    "end_line": None,
+                    "code": ""
+                },
+                "cpp": {
+                    "function": None,
+                    "file": None,
+                    "start_line": None,
+                    "end_line": None,
+                    "code": ""
+                }
+            }
+        else:
+            api_data = {
+                "python": {
+                    "file": info["file"],
+                    "start_line": info["start_line"],
+                    "end_line": info["end_line"],
+                    "code": info["source_code"]
+                },
+                "cpp": {
+                    "function": None,
+                    "file": None,
+                    "start_line": None,
+                    "end_line": None,
+                    "code": ""
+                }
+            }
+
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        if output_file.exists():
+            try:
+                with open(output_file, "r", encoding="utf-8") as f:
+                    all_sources = json.load(f)
+            except Exception:
+                all_sources = {}
+        else:
+            all_sources = {}
+        all_sources[api_name] = api_data
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(all_sources, f, indent=2, ensure_ascii=False)
+        return api_data
 
     # 获取库的根目录（尝试从已安装的包中获取）
     try:

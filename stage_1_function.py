@@ -33,6 +33,7 @@ call_llm_with_retry(client, model, messages, **kwargs)：带无限重试的LLM A
 
 
 def call_llm_with_retry(client, model, messages, **kwargs):
+    kwargs.setdefault("timeout", 300)
     while True:
         try:
             response = client.chat.completions.create(
@@ -41,7 +42,10 @@ def call_llm_with_retry(client, model, messages, **kwargs):
                 stream=False,
                 **kwargs
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("API returned None content, retrying...")
+            return content
         except Exception as e:
             print(f"[API 错误] {e}，3秒后重试...")
             time.sleep(3)
@@ -103,6 +107,13 @@ def get_doc(function_name: str) -> str:
     """
     if not function_name or not isinstance(function_name, str):
         return "错误：输入必须是非空的字符串。"
+
+    if USE_SOURCE_RESOLVER:
+        from source_resolver import get_docstring_from_source
+        doc = get_docstring_from_source(function_name, lib_gitname)
+        if doc:
+            return doc
+        return None
 
     parts = function_name.split('.')
     
@@ -798,19 +809,15 @@ def read_json_api(api_name, file_path, read_mode):
     if read_mode == "combination":
         j = 0
         path = file_path+f'{lib_name}_combinations_{j}.json'
-        while True:
+        try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if api_name in data:
-                return data[api_name]  # 二维数组
-            else:
-                j += 1
-                new_path = file_path+f'{lib_name}_combinations_{j}.json'
-                with open(new_path, "r", encoding="utf-8") as f:
-                    new_data = json.load(f)
-                return new_data[api_name]
-            if j > 20:
-                break
+        except FileNotFoundError:
+            return None
+        if api_name in data:
+            return data[api_name]
+        else:
+            return None
 
     elif read_mode == "error_combinations":
         path = file_path+f'error_{lib_name}_combinations.json'
@@ -822,17 +829,15 @@ def read_json_api(api_name, file_path, read_mode):
     elif read_mode == "arg_space":
         j = 0
         path = file_path+f'{lib_name}_arg_space_{j}.json'
-        while True: 
+        try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if api_name in data:
-                return data[api_name]
-            else:
-                j += 1
-                new_path = file_path+f'{lib_name}_arg_space_{j}.json'
-                with open(new_path, "r", encoding="utf-8") as f:
-                    new_data = json.load(f)
-                return new_data[api_name]
+        except FileNotFoundError:
+            return None
+        if api_name in data:
+            return data[api_name]
+        else:
+            return None
     elif read_mode == "src_code":
         path = file_path+f'{lib_name}_api_sources.json'
         with open(path, "r", encoding="utf-8") as f:
@@ -890,27 +895,43 @@ def read_json_api(api_name, file_path, read_mode):
     elif read_mode == "cut_combination":
         j = 0
         path = file_path+f'{lib_name}_cut_combinations_{j}.json'
-        while True:
+        try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if api_name in data:
-                return data[api_name]  # 二维数组
-            else:
-                j += 1
-                new_path = file_path+f'{lib_name}_combinations_{j}.json'
-                with open(new_path, "r", encoding="utf-8") as f:
-                    new_data = json.load(f)
-                return new_data[api_name]
+        except FileNotFoundError:
+            return None
+        if api_name in data:
+            return data[api_name]
+        else:
+            return None
     else:
         return None
 
 # =========================================
 # 保存 API 输入信息的工具函数
 # =========================================
+def _deep_merge(existing, new):
+    """递归增量合并：dict 递归合并，list 去重追加，其他类型用新值覆盖"""
+    if isinstance(existing, dict) and isinstance(new, dict):
+        for k, v in new.items():
+            if k in existing:
+                existing[k] = _deep_merge(existing[k], v)
+            else:
+                existing[k] = v
+        return existing
+    elif isinstance(existing, list) and isinstance(new, list):
+        for item in new:
+            if item not in existing:
+                existing.append(item)
+        return existing
+    else:
+        return new
+
+
 def save_api_inputs(api_name, api_inputs, save_path):
     """
     将 {api_name: api_inputs} 增量写入 JSON 文件。
-    如果文件不存在则创建，存在则在原内容上追加。
+    如果文件不存在则创建，存在则在原内容上增量合并，不会覆盖已有数据。
     """
     # 1️⃣ 如果文件不存在 → 创建目录 & 空文件
     if not os.path.exists(save_path):
@@ -928,21 +949,31 @@ def save_api_inputs(api_name, api_inputs, save_path):
         except json.JSONDecodeError:
             all_data = {}
 
-    # 3️⃣ 合并（增量保存）
+    # 3️⃣ 增量合并：已有 key → 深度合并，新 key → 直接添加
     if api_name in all_data:
-        existing = all_data[api_name]
-        if isinstance(existing, dict) and isinstance(api_inputs, dict):
-            existing.update(api_inputs)
-        elif isinstance(existing, list) and isinstance(api_inputs, list):
-            existing.extend(api_inputs)
-        else:
-            all_data[api_name] = api_inputs
+        all_data[api_name] = _deep_merge(all_data[api_name], api_inputs)
     else:
         all_data[api_name] = api_inputs
 
-    # 4️⃣ 写回文件
+    # 4️⃣ 清理代理字符后写回文件
+    all_data = _clean_surrogates(all_data)
     with open(save_path, "w", encoding="utf-8") as f:
         json.dump(all_data, f, indent=4, ensure_ascii=False)
+
+
+def _clean_surrogates(obj):
+    """递归清除数据中的孤立代理字符 (U+D800~U+DFFF)，这些字符无法被 UTF-8 编码。"""
+    if isinstance(obj, str):
+        return ''.join(
+            c if ord(c) < 0xD800 or ord(c) > 0xDFFF else '�'
+            for c in obj
+        )
+    elif isinstance(obj, dict):
+        return {k: _clean_surrogates(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_surrogates(v) for v in obj]
+    return obj
+
 
 # =========================================
 # 根据规范化的api边界生成测试输入的管道
@@ -1000,7 +1031,8 @@ def check_constraints(combo_dict, constraints, default_inputs):
                 env[k] = False
             else:
                 try:
-                    env[k] = eval(v, {"torch": torch})
+                    _eval_ns = {"torch": torch} if "torch" in sys.modules else {}
+                    env[k] = eval(v, _eval_ns)
                 except Exception:
                     env[k] = v
         else:
@@ -1010,7 +1042,8 @@ def check_constraints(combo_dict, constraints, default_inputs):
     for constraint in constraints:
         try:
             # 尝试执行约束判断表达式
-            result = eval(constraint, {"torch": torch}, env)
+            _eval_ns = {"torch": torch} if "torch" in sys.modules else {}
+            result = eval(constraint, _eval_ns, env)
             # 只有当语句合法且明确返回 False 时，才判定为不满足
             if not result:
                 return False
@@ -1110,7 +1143,7 @@ def convert_input_to_string(params):
     """Convert all Tensors in params to torch.randn string expressions."""
     stringified = {}
     for k, v in params.items():
-        if isinstance(v, torch.Tensor):
+        if "torch" in sys.modules and isinstance(v, torch.Tensor):
             shape = tuple(v.shape)
             dtype = str(v.dtype)
             # 简化表达：float32 → 默认 torch.randn
@@ -1148,7 +1181,8 @@ def execute_api_template(run_api_func, test_inputs, log_path="error_log.json",
         return process.memory_info().rss / (1024 ** 3)
 
     for i, params in enumerate(test_inputs):
-        torch.cuda.empty_cache()
+        if "torch" in sys.modules:
+            torch.cuda.empty_cache()
         gc.collect()
         start_mem = get_memory_usage_gb()
         start_time = time.time()
@@ -1166,9 +1200,11 @@ def execute_api_template(run_api_func, test_inputs, log_path="error_log.json",
 
             # 数值异常
             def has_nan_or_inf(t):
-                return isinstance(t, torch.Tensor) and (torch.isnan(t).any() or torch.isinf(t).any())
+                if "torch" in sys.modules:
+                    return isinstance(t, torch.Tensor) and (torch.isnan(t).any() or torch.isinf(t).any())
+                return False
 
-            if isinstance(result, torch.Tensor):
+            if "torch" in sys.modules and isinstance(result, torch.Tensor):
                 if has_nan_or_inf(result):
                     record_issue("numerical", params, "NaN or Inf in output")
             elif isinstance(result, (tuple, list)):
@@ -1293,6 +1329,8 @@ def cut_combinations(api_names):
             arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
             error_combinations = read_json_api(api_name=api_names, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
             arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
+            if arg_combinations is None or arg_spaces is None:
+                continue
             if error_combinations is None:
                 error_combinations = []
         
@@ -1518,3 +1556,62 @@ def compare_results(v1_result, v2_result, status_v1, status_v2):
         return False, f"输出不一致:\n  V1: {v1_result}\n  V2: {v2_result}"
 
     return True, "一致"
+
+
+def get_function_signature_str(function_name: str) -> str:
+    """
+    使用 inspect.signature() 从已安装的库中反射获取函数的完整签名。
+    仅在 APIdef.txt 不含签名时作为 fallback。
+    如果导入失败，回退返回 function_name。
+    """
+    if not function_name or '.' not in function_name:
+        return function_name
+
+    parts = function_name.split('.')
+    for i in range(len(parts), 0, -1):
+        module_name = '.'.join(parts[:i])
+        try:
+            obj = importlib.import_module(module_name)
+            for attr in parts[i:]:
+                obj = getattr(obj, attr)
+
+            if not callable(obj):
+                continue
+
+            sig = inspect.signature(obj)
+            params = []
+            for name, param in sig.parameters.items():
+                if name == 'self':
+                    continue
+                type_str = ''
+                if param.annotation is not inspect.Parameter.empty:
+                    ann = param.annotation
+                    if isinstance(ann, str):
+                        type_str = f": {ann}"
+                    elif hasattr(ann, '__name__'):
+                        type_str = f": {ann.__name__}"
+                    else:
+                        type_str = f": {str(ann)}"
+                default_str = ''
+                if param.default is not inspect.Parameter.empty:
+                    default_str = f" = {repr(param.default)}"
+                params.append(f"{name}{type_str}{default_str}")
+
+            return_str = ''
+            if sig.return_annotation is not inspect.Parameter.empty:
+                ann = sig.return_annotation
+                if isinstance(ann, str):
+                    return_str = f" -> {ann}"
+                elif hasattr(ann, '__name__'):
+                    return_str = f" -> {ann.__name__}"
+                else:
+                    return_str = f" -> {str(ann)}"
+
+            return f"{function_name}({', '.join(params)}){return_str}"
+
+        except (ImportError, AttributeError):
+            continue
+        except Exception:
+            continue
+
+    return function_name

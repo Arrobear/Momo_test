@@ -1,7 +1,18 @@
 from config import *
 from stage_1_function import *
 from generate_prompt import *
+import inspect
 import threading
+
+CRASH_BUG_PATH = root_path + f'/documentation/results/{lib_name}_crash_bugs.json'
+
+def _save_crash_bug(api_name, entry):
+    """立即将库级崩溃 bug 写入 crash JSON 文件（增量合并）"""
+    bug_entry = {
+        "api_name": api_name,
+        **entry
+    }
+    save_api_inputs(api_name, [bug_entry], CRASH_BUG_PATH)
 '''
 存储整个方法中的小步骤 
 
@@ -10,11 +21,9 @@ generate_api_conditions(lib_name, api_names): 根据库名称和API名称生成A
 '''
 def generate_api_conditions(api_names):
     # 初始化 DeepSeek 客户端
-    client = OpenAI(
-        api_key = API_KEY,
-        base_url = BASE_URL
-    )
+    client = make_client()
 
+    # 读取完整定义行（含签名），与 api_names 一一对应
     with open(f"../documentation/lib_api/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
@@ -23,7 +32,7 @@ def generate_api_conditions(api_names):
         # 获取函数名
         fun_string = api_names[i]
         api_def = api_defs[i]
-        
+
         # 获取函数文档字符串
         function_name = filter_samenames(i, fun_string, api_names)
         i += 1
@@ -33,7 +42,16 @@ def generate_api_conditions(api_names):
             print(f"[错误] 获取 {fun_string} 的文档失败，跳过该函数")
             continue
 
-        # 生成prompt
+        # 如果 APIdef.txt 行不含签名，fallback 到 inspect 反射
+        if '(' not in api_def:
+            sig_str = get_function_signature_str(function_name)
+            if sig_str != function_name:
+                print(f"[签名反射] {function_name} -> {sig_str}")
+                api_def = sig_str
+            else:
+                print(f"[警告] 无法获取 {function_name} 的签名，使用名称")
+
+        # 生成prompt：传入完整签名
         prompt_1 = generate_prompt_1(fun_string, api_def, api_doc)
         # print("_________________________________________________________________________________________________________")
         # print(prompt_1)
@@ -142,10 +160,7 @@ def base_condition_filter(api_names):
 
 def check_condition_filter(api_names):
     # 初始化 DeepSeek 客户端
-    client = OpenAI(
-        api_key = API_KEY,
-        base_url = BASE_URL
-    )
+    client = make_client()
 
     with open(f"../documentation/lib_api/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
@@ -217,10 +232,7 @@ def check_condition_filter(api_names):
 
 def generate_api_boundary(api_names):
     # 初始化 DeepSeek 客户端
-    client = OpenAI(
-        api_key = API_KEY,
-        base_url = BASE_URL
-    )
+    client = make_client()
 
     # 移除 if lib_name == "torch" 判断，直接进入通用流程
     j = 0
@@ -238,8 +250,8 @@ def generate_api_boundary(api_names):
         conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
         arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
 
-        if arg_spaces is None:
-            add_log(root_path + f"/Momo_test/", api_name)
+        if arg_combinations is None or arg_spaces is None:
+            add_log(root_path + f"/Momo_test/{lib_name}_log.txt", api_name)
             i += 1
             continue
 
@@ -301,10 +313,7 @@ def generate_api_boundary(api_names):
 #------------------------------------
 def generate_default_inputs(api_names):
     # 初始化 DeepSeek 客户端
-    client = OpenAI(
-        api_key = API_KEY,
-        base_url = BASE_URL
-    )
+    client = make_client()
 
     # 重新从文件读取最新的 API 列表
     api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
@@ -426,10 +435,7 @@ def _is_code_type(type_desc):
 
 def generate_api_input(api_names):
     # 初始化 DeepSeek 客户端
-    client = OpenAI(
-        api_key = API_KEY,
-        base_url = BASE_URL
-    )
+    client = make_client()
 
     j = 0
     path = root_path + f'/documentation/api_input/{lib_name}_inputs_{j}.json'
@@ -465,6 +471,10 @@ def generate_api_input(api_names):
                 seed=42
             )
 
+            if outputs_text is None:
+                print(f"[警告] {api_name} 参数 {key} LLM 返回为空，跳过")
+                continue
+
             arg_input = extract_clean_list(outputs_text)
             # 为每个参数打上类型标签，区分 code 字符串和 literal 字符串
             param_type = "code" if _is_code_type(value) else "literal"
@@ -484,10 +494,7 @@ def generate_api_input(api_names):
 #------------------------------------
 def generate_test_cases(api_names):
 
-    client = OpenAI(
-        api_key = API_KEY,
-        base_url = BASE_URL
-    )
+    client = make_client()
 
     # 读取 API 定义
     with open(f"../documentation/lib_api/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
@@ -560,10 +567,36 @@ def _load_run_api(api_name):
         return None
     local_namespace = {}
     try:
-        exec(code_str, globals(), local_namespace)
+        exec_globals = dict(globals())
+        try:
+            lib_mod = importlib.import_module(lib_name)
+            exec_globals[lib_name] = lib_mod
+        except ImportError:
+            print(f"[警告] 无法导入库 {lib_name}，run_api 可能无法正常执行")
+        exec(code_str, exec_globals, local_namespace)
         return local_namespace.get("run_api")
     except Exception as e:
         print(f"解析 {api_name} 的 case 代码失败: {e}")
+        return None
+
+
+_valid_params_cache = {}
+
+def _get_function_params(api_name):
+    """从被测库的源码反射获取函数实际参数名列表，用于过滤 LLM 虚构的参数"""
+    global _valid_params_cache
+    if api_name in _valid_params_cache:
+        return _valid_params_cache[api_name]
+    try:
+        parts = api_name.split(".")
+        mod = importlib.import_module(".".join(parts[:-1]))
+        func = getattr(mod, parts[-1])
+        sig = inspect.signature(func)
+        params = set(sig.parameters.keys())
+        _valid_params_cache[api_name] = params
+        return params
+    except Exception:
+        _valid_params_cache[api_name] = None
         return None
 
 
@@ -575,13 +608,23 @@ def _get_eval_globals():
     """构建包含被测库公开 API 的 eval 命名空间，避免 eval 时 NameError"""
     global _eval_globals_cache
     if _eval_globals_cache is None:
-        _eval_globals_cache = {"glom": glom}
-        for name in dir(glom):
-            if not name.startswith("_"):
-                try:
-                    _eval_globals_cache[name] = getattr(glom, name)
-                except Exception:
-                    pass
+        _eval_globals_cache = {}
+        try:
+            lib_mod = importlib.import_module(lib_name)
+            _eval_globals_cache[lib_name] = lib_mod
+            for name in dir(lib_mod):
+                if not name.startswith("_"):
+                    try:
+                        _eval_globals_cache[name] = getattr(lib_mod, name)
+                    except Exception:
+                        pass
+        except ImportError:
+            pass
+        for alias in ["torch", "numpy", "np", "asyncio", "concurrent"]:
+            try:
+                _eval_globals_cache[alias] = importlib.import_module(alias)
+            except ImportError:
+                pass
     return _eval_globals_cache
 
 
@@ -753,9 +796,16 @@ def run_test_cases_v1(K=100, output_path=None):
                     api_run_results.append(result_entry)
                     continue
 
+                # --- 过滤掉 LLM 虚构的参数（不在实际函数签名中）---
+                valid_params = _get_function_params(api_name)
+                if valid_params is not None:
+                    filtered_item = {k: v for k, v in evaluated_item.items() if k in valid_params}
+                else:
+                    filtered_item = evaluated_item
+
                 # --- 运行 API (5s 超时保护，超时则跳过当前 API 剩余用例) ---
                 try:
-                    output = _run_with_timeout(run_api, 5, **evaluated_item)
+                    output = _run_with_timeout(run_api, 5, **filtered_item)
                     result_entry["函数运行状态"] = "success"
                     result_entry["函数返回结果"] = safe_serialize(output)
                 except _ApiTimeoutError:
@@ -774,7 +824,15 @@ def run_test_cases_v1(K=100, output_path=None):
                     api_run_results.append(result_entry)
                 except Exception as e:
                     result_entry["函数运行状态"] = "error"
-                    result_entry["函数返回结果"] = f"{type(e).__name__}: {str(e)}"
+                    try:
+                        result_entry["函数返回结果"] = f"{type(e).__name__}: {str(e)}"
+                    except Exception as str_exc:
+                        result_entry["函数返回结果"] = f"{type(e).__name__}: <exception str() failed>"
+                        result_entry["bug_category"] = "library_bug"
+                        result_entry["bug_location"] = f"{type(e).__name__}.__str__"
+                        result_entry["函数运行状态"] = "library_bug"
+                        result_entry["bug_detail"] = f"库异常 __str__() 崩溃: {type(str_exc).__name__}: {str_exc}"
+                        _save_crash_bug(api_name, result_entry.copy())
                     api_run_results.append(result_entry)
                 else:
                     api_run_results.append(result_entry)
@@ -887,11 +945,18 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
                 if not eval_success:
                     continue
 
+                # --- 过滤掉 LLM 虚构的参数（不在实际函数签名中）---
+                valid_params = _get_function_params(api_name)
+                if valid_params is not None:
+                    filtered_item = {k: v for k, v in evaluated_item.items() if k in valid_params}
+                else:
+                    filtered_item = evaluated_item
+
                 # --- 运行 V2 API (5s 超时保护) ---
                 v2_result = None
                 v2_status = "pending"
                 try:
-                    output = _run_with_timeout(run_api, 5, **evaluated_item)
+                    output = _run_with_timeout(run_api, 5, **filtered_item)
                     v2_result = safe_serialize(output)
                     v2_status = "success"
                 except _ApiTimeoutError:
@@ -901,7 +966,18 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
                     v2_result = f"[RECURSION_BUG] API 执行或结果序列化时触发递归深度超限，疑似库中存在循环引用或自引用结构"
                     v2_status = "recursion_bug"
                 except Exception as e:
-                    v2_result = f"{type(e).__name__}: {str(e)}"
+                    try:
+                        v2_result = f"{type(e).__name__}: {str(e)}"
+                    except Exception as str_exc:
+                        v2_result = f"{type(e).__name__}: <exception str() failed> [library_bug: {type(str_exc).__name__}]"
+                        _save_crash_bug(api_name, {
+                            "函数返回结果": v2_result,
+                            "函数运行状态": "library_bug",
+                            "bug_category": "library_bug",
+                            "bug_location": f"{type(e).__name__}.__str__",
+                            "bug_detail": f"库异常 __str__() 崩溃: {type(str_exc).__name__}: {str_exc}",
+                            "version": "v2"
+                        })
                     v2_status = "error"
 
                 # --- 差分断言 ---

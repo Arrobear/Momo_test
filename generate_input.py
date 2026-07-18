@@ -1,5 +1,11 @@
-import torch
-import numpy as np
+try:
+    import torch
+except ImportError:
+    torch = None
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 # ==========================================
 # 1. 基础类型生成器 (Base Generators)

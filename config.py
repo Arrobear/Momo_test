@@ -1,12 +1,18 @@
 # import torch
 # import tensorflowY as tf
-from transformers import AutoTokenizer, AutoModelForCausalLM, Starcoder2ForCausalLM, BitsAndBytesConfig
+try:
+    from transformers import AutoTokenizer, AutoModelForCausalLM, Starcoder2ForCausalLM, BitsAndBytesConfig
+except ImportError:
+    AutoTokenizer = AutoModelForCausalLM = Starcoder2ForCausalLM = BitsAndBytesConfig = None
 import json
 import re
 import itertools
 import os
-import sys 
-from accelerate import infer_auto_device_map, init_empty_weights
+import sys
+try:
+    from accelerate import infer_auto_device_map, init_empty_weights
+except ImportError:
+    infer_auto_device_map = init_empty_weights = None
 from torch_samename import *
 from pathlib import Path
 import yaml
@@ -21,7 +27,10 @@ import gc
 import psutil
 import traceback
 from itertools import product
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 import json_repair
 import math
 import random
@@ -29,11 +38,19 @@ import random
 
 # root_path = "/data/chaoni/haoyahui"
 root_path = "C:/Users/86184/Desktop/Papers"
-API_KEY = "su8-67e574e85440f32a2227a912fde7b998e4c1004de2a71379f0213f23558c91e2"
-BASE_URL = "https://www.su8.codes/codex/v1"
+API_KEY = "su8-8e384b5f169adcf2def9f570dd40aa9b"
+BASE_URL = "https://www.su8.codes/v1"
 MODEL = "gpt-5.5"
 
-# API_KEY = "sk-30a17e8207bd469f9d0801087422cd14"
+def make_client():
+    from openai import OpenAI
+    return OpenAI(
+        api_key=API_KEY,
+        base_url=BASE_URL,
+        default_headers={"User-Agent": "python-httpx/0.28.1"},
+    )
+
+# API_KEY = "sk-d4cc67e7e9574afd9708ffe967ca20d5"
 # BASE_URL = "https://api.deepseek.com"
 # MODEL = "deepseek-v4-pro"
 
@@ -44,19 +61,35 @@ model_path = root_path + "/haoyahui/Model/DeepSeek-R1-Distill-Qwen-32B"
 # model_path = "/nasdata/haoyahui/Model/Meta-Llama-3-70B-Instruct"
 # model_path = "D:/Model/DeepSeek-R1-Distill-Qwen-1.5B"
 
-import glom
-import boolean
-import mimesis
+try:
+    import glom
+except ImportError:
+    glom = None
+try:
+    import boolean
+except ImportError:
+    boolean = None
+try:
+    import mimesis
+except ImportError:
+    mimesis = None
+try:
+    import parse
+except ImportError:
+    parse = None
 
-lib_name = "mimesis"  # 库名称
-lib_gitname = "mimesis"
-test_version = ['2caafb2','812ad3b']
+
+USE_SOURCE_RESOLVER = True  # True: AST方式读源码 / False: 原importlib方式
+
+lib_name = "black"  # 库名称
+lib_gitname = "black"
+test_version = ['ea6ba08','334db14']
 
 # test.cpp
 # joern_project  = "pytorch-2.5.1" # joern 项目名
 # {lib_name}_{commit_hash}
-conmmit_hash = "0da6086c"
-joern_project  = "mimesis_2caafb2" # joern 项目名
+conmmit_hash = "aba793e7"
+joern_project  = "black_2" # joern 项目名
 joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
 
 gpu_str = os.environ.get("FREE_GPUS", "")

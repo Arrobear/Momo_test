@@ -6,6 +6,12 @@ from metamorphic_test import run_metamorphic_tests
 
 
 if __name__ == "__main__":
+  import argparse
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--k", type=int, default=200,
+                      help="Number of test cases per API (K)")
+  args = parser.parse_args()
+
   random.seed(42)
   #读取函数文档``
   api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
@@ -57,7 +63,7 @@ if __name__ == "__main__":
   # ==========================================
 
   # V1/V2 差分测试 (发现regression)
-  run_test_cases(K=200)
+  run_test_cases(K=500)
 
   # run_test_cases(K=100)
 
