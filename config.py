@@ -51,7 +51,7 @@ if os.path.isdir(_dl_lib_dir):
             sys.path.insert(0, _candidate)
 del _dl_lib_dir, _entry, _candidate
 
-API_KEY = "su8-8e384b5f169adcf2def9f570dd40aa9b"
+API_KEY = "su8-8e384b5f169adcf570dd40aa9b"
 BASE_URL = "https://www.su8.codes/v1"
 MODEL = "gpt-5.5"
 
