@@ -2,7 +2,8 @@ from config import *
 from stage_1_function import *
 from generate_prompt import *
 from stage_1_approch import *
-from metamorphic_test import run_metamorphic_tests
+# metamorphic_test 在需要时才 import，避免 Python 3.6 兼容性问题
+# from metamorphic_test import run_metamorphic_tests
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-from __future__ import annotations
 """
 蜕变测试模块 (Metamorphic Testing)
 
@@ -21,7 +20,7 @@ import traceback
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, List, Dict
 
 # ── 复用现有模块 ─────────────────────────────────────────
 from config import root_path, lib_name, API_KEY, BASE_URL, make_client
@@ -73,9 +72,9 @@ class MetamorphicRelation(ABC):
         self,
         api_name: str,
         run_api: Callable,
-        param_names: list[str],
-        param_values: list[Any],
-        param_types: list[str],
+        param_names: List[str],
+        param_values: List[Any],
+        param_types: List[str],
     ) -> Verdict:
         """
         对一组具体的参数值执行蜕变检查。
@@ -729,7 +728,7 @@ class Decompose(MetamorphicRelation):
 # ============================================================
 
 def generate_decompose_plans(
-    api_names: list[str],
+    api_names: List[str],
     conditions: dict,
     cache_path: str | None = None,
     client: Any = None,
@@ -910,7 +909,7 @@ class MetamorphicRunner:
         self._decompose_plans = decompose_plans or {}
 
         # 注册所有蜕变关系 (按优先级)
-        self._relations: list[MetamorphicRelation] = [
+        self._relations: List[MetamorphicRelation] = [
             NonMutation(),
             Repeatable(),
             Idempotent(),
@@ -918,10 +917,10 @@ class MetamorphicRunner:
         ]
 
         # 结果收集
-        self._violations: list[dict] = []     # 违规 (疑似 bug)
-        self._passes: list[dict] = []         # 通过
-        self._skips: list[dict] = []          # 跳过
-        self._errors: list[dict] = []         # 执行错误
+        self._violations: List[dict] = []     # 违规 (疑似 bug)
+        self._passes: List[dict] = []         # 通过
+        self._skips: List[dict] = []          # 跳过
+        self._errors: List[dict] = []         # 执行错误
 
         # 统计
         self._stats = Counter()
@@ -939,7 +938,7 @@ class MetamorphicRunner:
 
     def run(
         self,
-        api_names: list[str] | None = None,
+        api_names: List[str] | None = None,
         verbose: bool = True,
     ) -> dict:
         """对所有 API 执行蜕变测试。返回汇总报告 dict。"""
@@ -1030,10 +1029,15 @@ class MetamorphicRunner:
 
             # eval 参数值
             try:
-                values = [
+                eval_results = [
                     _eval_param_by_type(v, t)
                     for v, t in zip(raw_values, types)
                 ]
+                # 如果任一参数 eval 失败（ok=False），跳过该样本
+                if any(not ok for _, ok in eval_results):
+                    self._stats["eval_error"] += 1
+                    continue
+                values = [v for v, _ in eval_results]
             except Exception as e:
                 self._stats["eval_error"] += 1
                 continue

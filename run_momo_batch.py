@@ -1,5 +1,6 @@
 import ctypes
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -19,11 +20,11 @@ JOERN_WORKSPACE = MOMO_DIR / "workspace"
 BUGSINPY_DIR = DATABASE_DIR / "BugsInPy" / "projects"
 SKIPPED_DIR = DATABASE_DIR / "skipped_entries"
 
-LIB_FILE = "black.txt"
-LIB_GITNAME = "black"
-LIB_NAME = "black"
+LIB_FILE = "ansible.txt"
+LIB_GITNAME = "ansible"
+LIB_NAME = "ansible"
 START = 0
-END = None
+END = None  # None 表示处理到最后一条记录
 
 MOMO_ENV = "momo_test"  # 算法环境（有 ML 依赖）
 
@@ -45,14 +46,14 @@ def relaunch_as_admin():
     sys.exit(0)
 
 
-def run(command, cwd=None):
+def run(command, cwd=None, env=None):
     print(f"\n>>> {command}", flush=True)
-    subprocess.run(command, cwd=cwd, shell=True, check=True)
+    subprocess.run(command, cwd=cwd, shell=True, check=True, env=env)
 
 
-def run_no_check(command, cwd=None):
+def run_no_check(command, cwd=None, env=None):
     print(f"\n>>> {command}", flush=True)
-    result = subprocess.run(command, cwd=cwd, shell=True)
+    result = subprocess.run(command, cwd=cwd, shell=True, env=env)
     return result.returncode == 0
 
 
@@ -144,7 +145,8 @@ def activate_conda_env(env_name):
         print(f"conda 环境 {env_name} 不存在，正在创建 (python={python_version}) ...")
         run(f"conda create -n {env_name} python={python_version} -y")
     run(f"conda activate {env_name}")
-    run(f"conda run --no-capture-output -n {env_name} python -m pip install --upgrade setuptools wheel psutil json_repair pyyaml")
+    run(f"conda run --no-capture-output -n {env_name} python -m pip install --upgrade wheel psutil pyyaml")
+    run(f'conda run --no-capture-output -n {env_name} pip install "setuptools<68"')
 
 
 def pip_install_env(env_name, args, cwd=None):
@@ -179,13 +181,62 @@ def update_config(lib_name, lib_gitname, bug_id):
     replace_config_bool("USE_SOURCE_RESOLVER", "True")
 
 
+def _is_prerelease_version(line):
+    """检查依赖行是否指定了预发布版本号（dev/alpha/beta/rc），PyPI 通常不提供这些版本。"""
+    import re
+    return bool(re.search(r'==[^;]*\.dev\d+', line.lower())
+                or re.search(r'==[^;]*(?:alpha|beta|rc)\d*', line.lower(), re.IGNORECASE))
+
+
 def install_requirements(env_name, bug_id, lib_gitname):
     req_path = BUGSINPY_DIR / lib_gitname / "bugs" / str(bug_id) / "requirements.txt"
-    if req_path.exists():
-        print(f"安装依赖: {req_path}")
-        pip_install_env(env_name, f'-r "{req_path}"')
-    else:
+    if not req_path.exists():
         print(f"未找到 requirements.txt: {req_path}，跳过依赖安装。")
+        return
+
+    print(f"安装依赖: {req_path}")
+
+    # 过滤掉 -e git+ 可编辑安装行（它们指向的 commit 可能已不在当前仓库中）
+    # 以及已知的与 setuptools 不兼容的老旧包
+    KNOWN_BROKEN = {"accessify", "funcsigs", "pathlib2", "scandir", "functools32", "typing"}
+    lines = req_path.read_bytes()
+
+    # 处理 UTF-16 编码（用 UTF-8 读取会看到空字节，decode 会失败或给出一堆 NUL）
+    try:
+        text = lines.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = lines.decode("utf-16-le")
+
+    filtered = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            filtered.append(line)
+        elif stripped.startswith("-e"):
+            print(f"跳过可编辑安装: {stripped}")
+        else:
+            # 检查是否为已知问题包
+            pkg_name = stripped.split("==")[0].split(">=")[0].split("<=")[0].split(">")[0].split("<")[0].strip()
+            if pkg_name.lower() in {k.lower() for k in KNOWN_BROKEN}:
+                print(f"跳过已知不兼容包: {stripped}")
+            # 跳过 dev/alpha/beta/rc 预发布版本（PyPI 通常不提供这些版本）
+            elif _is_prerelease_version(stripped):
+                print(f"跳过预发布版本: {stripped}")
+            else:
+                filtered.append(line)
+
+    filtered_text = "\n".join(filtered)
+    if filtered_text.strip():
+        temp_req = req_path.with_suffix(".tmp.txt")
+        temp_req.write_text(filtered_text, encoding="utf-8")
+        try:
+            pip_install_env(env_name, f'-r "{temp_req}"')
+        except subprocess.CalledProcessError:
+            print("警告：部分依赖安装失败，尝试继续...")
+        finally:
+            temp_req.unlink(missing_ok=True)
+    else:
+        print("过滤后无有效依赖，跳过安装。")
 
 
 def write_api_defs(lib_name, apis):
@@ -325,7 +376,9 @@ def process_record(record, lib_gitname, lib_name):
 
     print("\n" + "=" * 80)
     print(json.dumps(record, ensure_ascii=False, indent=2))
-
+    # 13) 清理中间文件
+    print("\n--- 清理中间文件 ---")
+    cleanup_intermediate_files(lib_name)
     # 1) 环境准备：确保 momo_test（算法）和版本 env（测试）都存在
     print("\n--- 环境准备 ---")
     run("conda deactivate")
@@ -346,7 +399,13 @@ def process_record(record, lib_gitname, lib_name):
 
     # 5) 安装待测库 → 版本 env（测试用）
     print("\n--- 安装待测库 (bug 版本) ---")
-    pip_install_env(env_name, ".", cwd=repo_dir)
+    if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install .", cwd=repo_dir):
+        print("警告：待测库安装失败，尝试使用 pip install -e (开发模式)...")
+        if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install -e .", cwd=repo_dir):
+            print("警告：开发模式安装也失败。将通过 PYTHONPATH 添加库路径来兜底。")
+
+    # 设置环境变量，确保后续 conda run 命令能 import 被测库
+    env_with_path = {**os.environ, "PYTHONPATH": str(repo_dir)}
 
     # 6) 写入 API 定义文件
     print("\n--- 写入 API 定义文件 ---")
@@ -366,16 +425,19 @@ def process_record(record, lib_gitname, lib_name):
 
     # 9b) 执行 main.py 测试阶段 → 版本 env（bug 版本测试，生成 V1 基线）
     print("\n--- main.py --phase test (版本 env) ---")
-    run(f'conda run --no-capture-output -n {env_name} python -u main.py --phase test --k 500', cwd=MOMO_DIR)
+    run(f'conda run --no-capture-output -n {env_name} python -u main.py --phase test --k 500', cwd=MOMO_DIR, env=env_with_path)
 
     # 10) 切换到 fix 版本并安装 → 版本 env
     print("\n--- 切换到 fix 版本 ---")
     checkout_version(repo_dir, fix_hash)
-    pip_install_env(env_name, ".", cwd=repo_dir)
+    if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install .", cwd=repo_dir, env=env_with_path):
+        print("警告：fix 版本安装失败。")
+    if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install -e .", cwd=repo_dir, env=env_with_path):
+        print("警告：fix 版本开发模式安装也失败，将通过 PYTHONPATH 兜底。")
 
     # 11) 执行 entrance.py → 版本 env（fix 版本测试，生成 V2 + diff）
     print("\n--- entrance.py (版本 env) ---")
-    run(f'conda run --no-capture-output -n {env_name} python -u entrance.py', cwd=MOMO_DIR)
+    run(f'conda run --no-capture-output -n {env_name} python -u entrance.py', cwd=MOMO_DIR, env=env_with_path)
 
     # 12) 移动结果文件
     print("\n--- 移动结果文件 ---")

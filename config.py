@@ -31,13 +31,26 @@ try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
-import json_repair
+try:
+    import json_repair
+except ImportError:
+    json_repair = None
 import math
 import random
 
 
 # root_path = "/data/chaoni/haoyahui"
 root_path = "C:/Users/86184/Desktop/Papers"
+
+# 将被测库的源码目录加到 sys.path，确保 pip install 失败时也能 import 被测库
+_dl_lib_dir = os.path.join(root_path, "documentation", "dl_lib")
+if os.path.isdir(_dl_lib_dir):
+    for _entry in os.listdir(_dl_lib_dir):
+        _candidate = os.path.join(_dl_lib_dir, _entry)
+        if os.path.isdir(_candidate) and _candidate not in sys.path:
+            sys.path.insert(0, _candidate)
+del _dl_lib_dir, _entry, _candidate
+
 API_KEY = "su8-8e384b5f169adcf2def9f570dd40aa9b"
 BASE_URL = "https://www.su8.codes/v1"
 MODEL = "gpt-5.5"
@@ -50,9 +63,6 @@ def make_client():
         default_headers={"User-Agent": "python-httpx/0.28.1"},
     )
 
-# API_KEY = "sk-d4cc67e7e9574afd9708ffe967ca20d5"
-# BASE_URL = "https://api.deepseek.com"
-# MODEL = "deepseek-v4-pro"
 
 # 参数设置
 # model_path = "/nasdata/haoyahui/Model/starcoder2-15b"
@@ -81,15 +91,15 @@ except ImportError:
 
 USE_SOURCE_RESOLVER = True  # True: AST方式读源码 / False: 原importlib方式
 
-lib_name = "black"  # 库名称
-lib_gitname = "black"
+lib_name = "ansible"  # 库名称
+lib_gitname = "ansible"
 test_version = ['ea6ba08','334db14']
 
 # test.cpp
 # joern_project  = "pytorch-2.5.1" # joern 项目名
 # {lib_name}_{commit_hash}
 conmmit_hash = "aba793e7"
-joern_project  = "black_2" # joern 项目名
+joern_project  = "ansible_6" # joern 项目名
 joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
 
 gpu_str = os.environ.get("FREE_GPUS", "")

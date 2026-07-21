@@ -631,12 +631,12 @@ def extract_clean_json(text: str):
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError:
-        # 调用外部修复函数
+        # 调用外部修复函数（可选依赖，失败则跳过）
         try:
-            from json_repair import repair_json  # 推荐使用专门的库
+            from json_repair import repair_json
             json_str = repair_json(json_str)
             data = json.loads(json_str)
-        except:
+        except Exception:
             # 最后的保底尝试：基础符号修复
             try:
                 # 如果没有 balance_json_braces，可在此实现简单的大括号对齐

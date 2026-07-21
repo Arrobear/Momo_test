@@ -2,6 +2,7 @@ from config import *
 from stage_1_function import *
 from generate_prompt import *
 import inspect
+import sys
 import threading
 
 CRASH_BUG_PATH = root_path + f'/documentation/results/{lib_name}_crash_bugs.json'
@@ -363,8 +364,6 @@ def generate_default_inputs(api_names):
     return
 
 
-
-
 #------------------------------------
 # 生成api input
 #------------------------------------
@@ -433,6 +432,49 @@ def _is_code_type(type_desc):
     return any(kw in type_desc for kw in code_keywords)
 
 
+def _is_code_value(value):
+    """判断单个候选值字符串是否看起来像需要 eval 的代码表达式。
+
+    匹配模式：ClassName(...) 构造器调用、module.function(...) 调用等。
+    用于兜底 _is_code_type 漏掉的类型（如 LLM 为参数类型描述不包含 code 关键字的参数
+    生成了构造器表达式）。
+    """
+    if not isinstance(value, str):
+        return False
+    # 匹配 ClassName(...) 或 module.ClassName(...) 或 module.func(...) 调用模式
+    import re
+    return bool(re.match(
+        r'^[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)*\(.*\)$',
+        value.strip()
+    )) and not _looks_like_literal(value)
+
+
+def _looks_like_literal(value):
+    """排除看起来像 Python 字面量而非构造器调用的表达式。
+    例如：dict(...), list(...), tuple(...), set(...), int(...), str(...), float(...), bool(...)
+    """
+    builtin_calls = {'dict', 'list', 'tuple', 'set', 'frozenset',
+                     'int', 'str', 'float', 'bool', 'bytes', 'bytearray',
+                     'complex', 'chr', 'ord', 'hex', 'oct', 'bin', 'repr',
+                     'len', 'abs', 'min', 'max', 'sum', 'sorted', 'reversed',
+                     'enumerate', 'zip', 'map', 'filter', 'iter', 'next',
+                     'object', 'super', 'slice', 'range', 'memoryview'}
+    first_paren = value.find('(')
+    if first_paren == -1:
+        return False
+    name = value[:first_paren].strip()
+    # 去掉模块前缀
+    base = name.split('.')[-1] if '.' in name else name
+    return base in builtin_calls
+
+
+def _any_value_is_code(values):
+    """检查候选值列表中是否有任何一个看起来像代码表达式"""
+    if not values:
+        return False
+    return any(_is_code_value(v) for v in values)
+
+
 def generate_api_input(api_names):
     # 初始化 DeepSeek 客户端
     client = make_client()
@@ -477,7 +519,8 @@ def generate_api_input(api_names):
 
             arg_input = extract_clean_list(outputs_text)
             # 为每个参数打上类型标签，区分 code 字符串和 literal 字符串
-            param_type = "code" if _is_code_type(value) else "literal"
+            # 先按参数类型描述判断，再检查候选值本身是否像构造器调用（兜底）
+            param_type = "code" if (_is_code_type(value) or _any_value_is_code(arg_input)) else "literal"
             api_inputs_candidate[key] = {"type": param_type, "values": arg_input}
 
         # 存储至 json
@@ -608,16 +651,16 @@ def _get_eval_globals():
     """构建包含被测库公开 API 的 eval 命名空间，避免 eval 时 NameError"""
     global _eval_globals_cache
     if _eval_globals_cache is None:
-        _eval_globals_cache = {}
+        _eval_globals_cache = {"__builtins__": __builtins__}
         try:
             lib_mod = importlib.import_module(lib_name)
             _eval_globals_cache[lib_name] = lib_mod
-            for name in dir(lib_mod):
-                if not name.startswith("_"):
-                    try:
-                        _eval_globals_cache[name] = getattr(lib_mod, name)
-                    except Exception:
-                        pass
+            _eval_globals_cache["_momo_lib_mod"] = lib_mod
+            _eval_globals_cache["_momo_lib_name"] = lib_name
+            # 遍历库的所有子模块和嵌套类，注册到命名空间
+            _collect_lib_symbols(lib_mod, lib_name)
+            # 为常见命名差异添加别名（如文档中的 Mode → 实际类 FileMode）
+            _add_common_aliases()
         except ImportError:
             pass
         for alias in ["torch", "numpy", "np", "asyncio", "concurrent"]:
@@ -628,41 +671,444 @@ def _get_eval_globals():
     return _eval_globals_cache
 
 
-def _eval_param_by_type(param_value, param_type):
-    """根据类型标签决定是否 eval：code 类型 eval，literal 类型也尝试还原 repr() 序列化的非基本类型"""
-    if not isinstance(param_value, str):
-        return param_value
+def _resolve_name(name, eval_globals):
+    """懒解析未注册的符号名：先尝试被测库模块，再尝试作为 Python 标准库/第三方模块 import。
 
-    eval_globals = _get_eval_globals()
+    处理 LLM 生成的代码中引用了库的类/函数但没有被 _collect_lib_symbols 注册的情况
+    （例如库的某个内部类没有通过 dir() 暴露，或者 LLM 用了别名如 token.NAME）。
+    返回解析到的对象，失败返回 None。
+    """
+    if name in eval_globals:
+        return eval_globals[name]
 
-    if param_type == "code":
+    lib_mod = eval_globals.get("_momo_lib_mod")
+    lib_name_val = eval_globals.get("_momo_lib_name", "")
+
+    # 1. 直接尝试从库模块获取
+    if lib_mod is not None and hasattr(lib_mod, name):
+        obj = getattr(lib_mod, name)
+        eval_globals[name] = obj
+        return obj
+
+    # 2. 遍历已注册的子模块，查找 name
+    if lib_mod is not None:
+        for key, val in eval_globals.items():
+            if key.startswith(f"{lib_name_val}.") and isinstance(val, type(sys)):
+                if hasattr(val, name):
+                    obj = getattr(val, name)
+                    eval_globals[name] = obj
+                    return obj
+
+    # 3. 重新 import 被测库并全量遍历 dir 查找
+    if lib_name_val:
         try:
-            return eval(param_value, eval_globals)
-        except Exception:
-            return param_value
-
-    # safe_serialize 对非基本类型调用 repr() 序列化，这里逆向还原
-    stripped = param_value.strip()
-    if stripped and stripped[0] in "{([":
-        try:
-            return ast.literal_eval(param_value)
-        except (ValueError, SyntaxError):
-            try:
-                return eval(param_value, eval_globals)
-            except Exception:
-                return param_value
-
-    # 部分 LLM 生成的候选值是代码表达式但被误标为 "literal"（如 "Val(0)", "Path('a','b')"）
-    # 尝试 eval：只接受结果为非字符串对象，避免将普通字符串意外转换
-    if stripped and "(" in stripped:
-        try:
-            result = eval(param_value, eval_globals)
-            if not isinstance(result, str):
-                return result
-        except Exception:
+            lib_mod_fresh = importlib.import_module(lib_name_val)
+            if hasattr(lib_mod_fresh, name):
+                obj = getattr(lib_mod_fresh, name)
+                eval_globals[name] = obj
+                return obj
+        except ImportError:
             pass
 
-    return param_value
+    # 4. 作为 Python 模块 import（处理 token, enum, collections, typing 等标准库/第三方库）
+    try:
+        mod = importlib.import_module(name)
+        eval_globals[name] = mod
+        return mod
+    except ImportError:
+        pass
+
+    return None
+
+
+class _LazyResolveDict(dict):
+    """一个 dict 子类，在 __getitem__ 找不到 key 时自动尝试从被测库模块解析符号名。
+
+    用于 eval() 的 globals — 当 eval 遇到未知变量时触发 NameError，
+    在 try/except 中捕获后再用 _resolve_name 解析并重试。
+    """
+    pass
+
+
+def _eval_with_lazy_resolve(expr, eval_globals):
+    """带懒解析的 eval：NameError 时尝试从被测库动态查找缺失的符号并重试。
+
+    最多重试 5 次（每次解析一个缺失符号），避免无限循环。
+    返回值: (result, success, error_msg)
+      - success=True: result 是 eval 结果
+      - success=False: error_msg 描述失败原因
+    """
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            result = eval(expr, eval_globals)
+            return result, True, None
+        except NameError as e:
+            import re
+            m = re.search(r"name '(\w+)' is not defined", str(e))
+            if not m:
+                return None, False, f"NameError 但无法提取符号名: {e}"
+            missing = m.group(1)
+            resolved = _resolve_name(missing, eval_globals)
+            if resolved is None:
+                return None, False, f"无法解析符号 '{missing}'（非被测库符号，也非可导入模块）"
+            # 解析成功，继续重试
+        except Exception as e:
+            return None, False, f"{type(e).__name__}: {str(e)[:300]}"
+
+
+def _add_common_aliases():
+    """为常见的命名差异添加别名映射，如 FileMode → Mode"""
+    lib_mod = _eval_globals_cache.get(lib_name)
+    alias_map = {}
+    for name, obj in list(_eval_globals_cache.items()):
+        if not isinstance(obj, type):
+            continue
+        # 处理带前缀的类名：如 FileMode → Mode, WriteBack → Back
+        for prefix in ["File", "Write", "Read", "Parse", "Input", "Output"]:
+            if name.startswith(prefix) and len(name) > len(prefix):
+                short = name[len(prefix):]
+                # 只在 short 不为空且首字母仍大写的纯字母名上创建别名
+                if short and short[0].isupper() and short.isidentifier():
+                    alias_map.setdefault(short, obj)
+    for alias, obj in alias_map.items():
+        if alias not in _eval_globals_cache:
+            _eval_globals_cache[alias] = obj
+        # 同时在库模块上设置该别名，使 black.Mode 也能工作
+        if lib_mod is not None and not hasattr(lib_mod, alias):
+            try:
+                setattr(lib_mod, alias, obj)
+            except Exception:
+                pass
+
+
+def _collect_lib_symbols(root_mod, root_name):
+    """递归收集库的子模块和公开符号到 eval 命名空间"""
+    seen = set()
+    _collect_recursive(root_mod, root_name, seen)
+
+
+def _collect_recursive(mod, prefix, seen):
+    """递归遍历模块，注册子模块和公开类/函数"""
+    for name in dir(mod):
+        if name.startswith("_"):
+            continue
+        try:
+            obj = getattr(mod, name)
+        except Exception:
+            continue
+        key = f"{prefix}.{name}"
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+
+        _eval_globals_cache[name] = obj
+        _eval_globals_cache[key] = obj
+
+        if isinstance(obj, type):
+            # 注册类的嵌套类
+            for attr_name in dir(obj):
+                if attr_name.startswith("_"):
+                    continue
+                try:
+                    attr_obj = getattr(obj, attr_name)
+                    if id(attr_obj) not in seen:
+                        seen.add(id(attr_obj))
+                        _eval_globals_cache[attr_name] = attr_obj
+                        _eval_globals_cache[f"{key}.{attr_name}"] = attr_obj
+                except Exception:
+                    pass
+        elif _is_package_or_module(obj, name):
+            try:
+                _collect_recursive(obj, key, seen)
+            except Exception:
+                pass
+
+
+def _is_package_or_module(obj, name):
+    """判断对象是否为子模块/子包"""
+    if isinstance(obj, type(sys)):
+        return True
+    if hasattr(obj, "__path__"):
+        return True
+    if hasattr(obj, "__file__") and hasattr(obj, "__name__"):
+        return True
+    return False
+
+
+def _eval_param_by_type(param_value, param_type):
+    """根据类型标签决定是否 eval：code 类型 eval，literal 类型也尝试还原 repr() 序列化的非基本类型
+
+    返回值: (result, success) — success=False 表示 eval 失败，调用方应跳过该用例而非将字符串传入 run_api
+    """
+    if not isinstance(param_value, str):
+        return param_value, True
+
+    eval_globals = _get_eval_globals()
+    _stripped = param_value.strip()
+
+    if param_type == "code":
+        return _eval_code_param(param_value, _stripped, eval_globals)
+
+    # 否则按 literal 处理
+    return _eval_literal_param(_stripped, eval_globals), True
+
+
+def _eval_code_param(original, stripped, eval_globals):
+    """eval code 类型参数，失败时尝试 AST 修复（移除无效 kwarg / 注入缺失符号）"""
+    # 1. 直接 eval
+    result, ok = _try_eval_code(stripped, eval_globals)
+    if ok:
+        return result, True
+
+    # 2. 尝试 AST 修复
+    fixed_expr = _ast_fix_call(stripped, eval_globals)
+    if fixed_expr is not None and fixed_expr != stripped:
+        result, ok = _try_eval_code(fixed_expr, eval_globals)
+        if ok:
+            import warnings
+            warnings.warn(f"[eval] AST 修复后成功: {stripped[:80]}... -> {fixed_expr[:80]}...")
+            return result, True
+
+    import warnings
+    warnings.warn(f"[eval] code 类型参数 eval 失败且无法修复: {original[:120]}...")
+    return original, False
+
+
+def _try_eval_code(expr, eval_globals):
+    """尝试 eval，带 NameError 懒解析。成功且结果为非字符串→(result, True)，否则→(result, False)"""
+    result, ok, _err = _eval_with_lazy_resolve(expr, eval_globals)
+    if ok:
+        if isinstance(result, str) and _looks_like_code_expr(expr.strip()):
+            return result, False
+        return result, True
+    return None, False
+
+
+def _ast_fix_call(expr, eval_globals):
+    """AST 分析并修复常见的 LLM 表达式错误：
+    1. 移除目标类/函数签名中不存在的关键字参数
+    2. 将目标类型中不存在的属性访问替换为已知别名
+
+    返回修复后的表达式字符串，无需修复则返回 None
+    """
+    try:
+        tree = ast.parse(expr, mode='eval')
+    except SyntaxError:
+        return None
+
+    # 收集所有需要修复的 Call 节点
+    calls_to_fix = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target = _resolve_callable(node.func, eval_globals)
+            if target is not None:
+                calls_to_fix.append((node, target))
+
+    if not calls_to_fix:
+        return None
+
+    changed = False
+    for node, target in calls_to_fix:
+        changed |= _drop_invalid_kwargs(node, target)
+
+    if not changed:
+        return None
+
+    # 反序列化回源代码
+    try:
+        fixed = ast.unparse(tree)
+    except AttributeError:
+        fixed = _unparse_expr(tree.body)
+    return fixed
+
+
+def _resolve_callable(func_node, eval_globals):
+    """尝试解析 AST 调用目标为实际可调用对象，返回 None 表示无法解析"""
+    try:
+        if isinstance(func_node, ast.Name):
+            obj = eval_globals.get(func_node.id)
+            return obj if callable(obj) else None
+        elif isinstance(func_node, ast.Attribute):
+            # 递归解析 a.b.c
+            inner = _resolve_callable(func_node.value, eval_globals)
+            if inner is not None and hasattr(inner, func_node.attr):
+                return getattr(inner, func_node.attr)
+            # 也尝试直接通过 eval_globals 中的全限定名查找
+            code = ast.unparse(func_node) if hasattr(ast, 'unparse') else _unparse_expr(func_node)
+            return eval_globals.get(code)
+    except Exception:
+        pass
+    return None
+
+
+def _drop_invalid_kwargs(call_node, target):
+    """移除调用中目标签名不接受的 keyword 参数，返回是否修改。
+
+    如果目标接受 **kwargs（变长关键字参数），则不删除任何参数。
+    """
+    try:
+        sig = inspect.signature(target)
+    except (ValueError, TypeError):
+        return False
+
+    # 如果签名中有 **kwargs 参数，所有 keyword 参数都可能合法，不做删除
+    has_varkw = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD
+        for p in sig.parameters.values()
+    )
+    if has_varkw:
+        return False
+
+    valid_params = set(sig.parameters.keys())
+    # 移除 self/cls (bound method 不需要)
+    valid_params.discard('self')
+    valid_params.discard('cls')
+
+    new_keywords = []
+    changed = False
+    for kw in call_node.keywords:
+        if kw.arg is None:
+            # **kwargs 展开，保留
+            new_keywords.append(kw)
+        elif kw.arg in valid_params:
+            new_keywords.append(kw)
+        else:
+            changed = True
+
+    if changed:
+        call_node.keywords = new_keywords
+    return changed
+
+
+def _unparse_expr(node):
+    """AST 表达式反序列化为源代码 (兼容 Python 3.8-)"""
+    # 使用内置 compile 的方式来获取源码... 不，直接用递归还原
+    return _Unparser().visit(node)
+
+
+class _Unparser:
+    """极简 AST → 源码转换器，覆盖常见表达式节点"""
+
+    def visit(self, node):
+        m = getattr(self, f'_un_{type(node).__name__}', None)
+        if m is None:
+            # fallback: 尝试用 compile 还原（仅 Python 3.9+）
+            try:
+                return ast.unparse(node)
+            except AttributeError:
+                return str(node)
+        return m(node)
+
+    def _un_Name(self, n): return n.id
+    def _un_Constant(self, n):
+        if isinstance(n.value, str):
+            return repr(n.value)
+        return str(n.value) if n.value is not ... else '...'
+    def _un_Num(self, n): return str(n.n)
+    def _un_Str(self, n): return repr(n.s)
+    def _un_Bytes(self, n): return repr(n.s)
+    def _un_Attribute(self, n): return f'{self.visit(n.value)}.{n.attr}'
+    def _un_Subscript(self, n): return f'{self.visit(n.value)}[{self.visit(n.slice)}]'
+    def _un_Index(self, n): return self.visit(n.value)
+    def _un_Slice(self, n):
+        parts = []
+        if n.lower: parts.append(self.visit(n.lower))
+        parts.append(':')
+        if n.upper: parts.append(self.visit(n.upper))
+        if n.step: parts.append(f':{self.visit(n.step)}')
+        return ''.join(parts)
+    def _un_List(self, n): return f'[{", ".join(self.visit(e) for e in n.elts)}]'
+    def _un_Tuple(self, n):
+        elts = ', '.join(self.visit(e) for e in n.elts)
+        if len(n.elts) == 1: elts += ','
+        return f'({elts})'
+    def _un_Dict(self, n):
+        return '{' + ', '.join(f'{self.visit(k)}: {self.visit(v)}' for k, v in zip(n.keys, n.values)) + '}'
+    def _un_Set(self, n): return '{' + ', '.join(self.visit(e) for e in n.elts) + '}'
+    def _un_Call(self, n):
+        args = [self.visit(a) for a in n.args]
+        args += [f'{k.arg}={self.visit(k.value)}' if k.arg else f'**{self.visit(k.value)}' for k in n.keywords]
+        return f'{self.visit(n.func)}({", ".join(args)})'
+    def _un_Lambda(self, n):
+        args = self.visit(n.args)
+        return f'lambda {args}: {self.visit(n.body)}'
+    def _un_arguments(self, n):
+        return ', '.join(a.arg for a in n.args)
+    def _un_UnaryOp(self, n):
+        ops = {ast.USub: '-', ast.UAdd: '+', ast.Not: 'not ', ast.Invert: '~'}
+        return f'{ops.get(type(n.op), "?")}{self.visit(n.operand)}'
+    def _un_BinOp(self, n):
+        ops = {ast.Add: '+', ast.Sub: '-', ast.Mult: '*', ast.Div: '/', ast.FloorDiv: '//',
+               ast.Mod: '%', ast.Pow: '**', ast.LShift: '<<', ast.RShift: '>>',
+               ast.BitOr: '|', ast.BitAnd: '&', ast.BitXor: '^'}
+        op = ops.get(type(n.op), '?')
+        return f'({self.visit(n.left)} {op} {self.visit(n.right)})'
+    def _un_Compare(self, n):
+        ops = {ast.Eq: '==', ast.NotEq: '!=', ast.Lt: '<', ast.LtE: '<=', ast.Gt: '>', ast.GtE: '>=',
+               ast.Is: 'is', ast.IsNot: 'is not', ast.In: 'in', ast.NotIn: 'not in'}
+        left = self.visit(n.left)
+        parts = []
+        for op, comp in zip(n.ops, n.comparators):
+            parts.append(f'{ops.get(type(op), "?")} {self.visit(comp)}')
+        return f'({left} {" ".join(parts)})'
+    def _un_BoolOp(self, n):
+        op = ' and ' if isinstance(n.op, ast.And) else ' or '
+        return f'({op.join(self.visit(v) for v in n.values)})'
+    def _un_IfExp(self, n):
+        return f'{self.visit(n.body)} if {self.visit(n.test)} else {self.visit(n.orelse)}'
+    def _un_JoinedStr(self, n):
+        parts = []
+        for v in n.values:
+            if isinstance(v, ast.Constant):
+                parts.append(str(v.value))
+            else:
+                parts.append('{' + self.visit(v.value) + '}')
+        return "f'" + ''.join(parts) + "'"
+    def _un_FormattedValue(self, n): return self.visit(n.value)
+    def _un_Starred(self, n): return f'*{self.visit(n.value)}'
+    def _un_ListComp(self, n):
+        gens = ' '.join(self._un_comprehension(g) for g in n.generators)
+        return f'[{self.visit(n.elt)} {gens}]'
+    def _un_GeneratorExp(self, n):
+        gens = ' '.join(self._un_comprehension(g) for g in n.generators)
+        return f'({self.visit(n.elt)} {gens})'
+    def _un_comprehension(self, n):
+        ifs = ''.join(f' if {self.visit(f)}' for f in n.ifs)
+        return f'for {self.visit(n.target)} in {self.visit(n.iter)}{ifs}'
+
+
+def _eval_literal_param(stripped, eval_globals):
+    """处理 literal 类型参数的反序列化"""
+    # safe_serialize 对非基本类型调用 repr() 序列化，这里逆向还原
+    if stripped and stripped[0] in "{([":
+        try:
+            return ast.literal_eval(stripped)
+        except (ValueError, SyntaxError):
+            try:
+                return eval(stripped, eval_globals)
+            except Exception:
+                return stripped
+
+    # 部分 LLM 生成的候选值是代码表达式但被误标为 "literal"
+    # 匹配 ClassName(...) / module.ClassName(...) 构造器调用模式
+    if stripped and _is_code_value(stripped):
+        result, ok, _err = _eval_with_lazy_resolve(stripped, eval_globals)
+        if ok and not isinstance(result, str):
+            return result
+
+    # 旧版兜底：包含 () 的通用表达式
+    if stripped and "(" in stripped:
+        result, ok, _err = _eval_with_lazy_resolve(stripped, eval_globals)
+        if ok and not isinstance(result, str):
+            return result
+
+    return stripped
+
+
+def _looks_like_code_expr(s):
+    """判断字符串是否看起来像代码表达式（包含函数调用或构造器）"""
+    return "(" in s and ")" in s
 
 
 class _ApiTimeoutError(Exception):
@@ -778,7 +1224,13 @@ def run_test_cases_v1(K=100, output_path=None):
                 eval_success = True
                 for param_name, entry in assembled.items():
                     try:
-                        evaluated_item[param_name] = _eval_param_by_type(serialized_input[param_name], entry["type"])
+                        result, ok = _eval_param_by_type(serialized_input[param_name], entry["type"])
+                        if not ok:
+                            eval_success = False
+                            result_entry["函数运行状态"] = "eval_failed"
+                            result_entry["函数返回结果"] = f"[EVAL_FAILED] 参数 {param_name} 无法反序列化: {str(serialized_input[param_name])[:200]}"
+                            break
+                        evaluated_item[param_name] = result
                     except RecursionError:
                         eval_success = False
                         result_entry["函数运行状态"] = "recursion_bug"
@@ -934,15 +1386,39 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
                             param_type = param_info.get("type", "literal")
 
                     try:
-                        evaluated_item[k] = _eval_param_by_type(v, param_type)
+                        result, ok = _eval_param_by_type(v, param_type)
+                        if not ok:
+                            eval_success = False
+                            v2_eval_error = f"[EVAL_FAILED] 参数 {k} 无法反序列化: {str(v)[:200]}"
+                            break
+                        evaluated_item[k] = result
                     except RecursionError:
                         eval_success = False
+                        v2_eval_error = f"[RECURSION_BUG] 参数 {k} 的 eval() 触发了递归深度超限"
                         break
-                    except Exception:
+                    except Exception as e:
                         eval_success = False
+                        v2_eval_error = f"[EVAL_FAILED] 参数 {k} 解析异常: {str(e)[:200]}"
                         break
 
                 if not eval_success:
+                    # V1 的这条用例 eval 就失败了，V2 也无法 eval，但需要报告差异
+                    # 如果 V1 状态也是 eval_failed/recursion_bug，说明是数据源问题而非版本差异
+                    if v1_status in ("eval_failed", "recursion_bug"):
+                        # V1 基线中的无效用例，记录为 SKIPPED（无法对比）而非 diff
+                        pass
+                    else:
+                        # V1 能执行成功但 V2 eval 失败 → 可能是基线数据版本问题
+                        diff_report.append({
+                            "api_name": api_name,
+                            "case_index": idx,
+                            "inputs": inputs_str_dict,
+                            "v1_status": v1_status,
+                            "v2_status": "eval_failed",
+                            "v1_output": v1_result,
+                            "v2_output": v2_eval_error,
+                            "diff_reason": f"V2 无法解析输入，V1 状态={v1_status}"
+                        })
                     continue
 
                 # --- 过滤掉 LLM 虚构的参数（不在实际函数签名中）---
