@@ -10,8 +10,27 @@ from stage_1_function import *
 
 # 通用库配置 - 根据 config.py 中的 lib_name 动态设置
 # PyTorch 特定配置（仅当 lib_name == "torch" 时使用）
-TORCH_PATH = Path("C:/Users/86184/Desktop/Papers/dl_lib/pytorch-2.5.1") if lib_name == "torch" else None
+TORCH_PATH = Path(root_path) / "documentation" / "dl_lib" / lib_gitname if lib_name == "torch" else None
 YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml" if TORCH_PATH else None
+
+
+def _make_local_runtime_env():
+    runtime_dir = Path(root_path) / ".momo_runtime"
+    cache_dir = runtime_dir / "cache"
+    config_dir = runtime_dir / "config"
+    joern_home = runtime_dir / "joern"
+    for path in (runtime_dir, cache_dir, config_dir, joern_home):
+        path.mkdir(parents=True, exist_ok=True)
+
+    return {
+        **os.environ,
+        "MOMO_ROOT": str(root_path),
+        "JOERN_PATH": str(joern_bat_path),
+        "HOME": str(runtime_dir),
+        "XDG_CACHE_HOME": str(cache_dir),
+        "XDG_CONFIG_HOME": str(config_dir),
+        "JOERN_HOME": str(joern_home),
+    }
 
 
 # =====================================================
@@ -22,17 +41,18 @@ class JoernShell:
     def __init__(self, joern_bat_path):
         """
         初始化 Joern shell
-        joern_bat_path: joern.bat 的完整路径
+        joern_bat_path: Joern 可执行文件的完整路径
         """
         self.process = subprocess.Popen(
             [joern_bat_path],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            encoding="gbk",
+            encoding="gbk" if os.name == "nt" else "utf-8",
             errors="replace",
-            shell=True
+            shell=False,
+            env=_make_local_runtime_env(),
         )
 
     def send_command(self, cmd):
@@ -1711,9 +1731,6 @@ if __name__ == "__main__":
             print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")
 
     print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
-
-
-
 
 
 

@@ -40,7 +40,7 @@ import random
 
 
 # root_path = "/data/chaoni/haoyahui"
-root_path = "C:/Users/86184/Desktop/Papers"
+root_path = os.environ.get("MOMO_ROOT", str(Path(__file__).resolve().parent.parent))
 
 # 将被测库的源码目录加到 sys.path，确保 pip install 失败时也能 import 被测库
 _dl_lib_dir = os.path.join(root_path, "documentation", "dl_lib")
@@ -49,7 +49,9 @@ if os.path.isdir(_dl_lib_dir):
         _candidate = os.path.join(_dl_lib_dir, _entry)
         if os.path.isdir(_candidate) and _candidate not in sys.path:
             sys.path.insert(0, _candidate)
-del _dl_lib_dir, _entry, _candidate
+for _name in ("_dl_lib_dir", "_entry", "_candidate"):
+    if _name in globals():
+        del globals()[_name]
 
 API_KEY = "su8-8e384b5f169adcf570dd40aa9b"
 BASE_URL = "https://www.su8.codes/v1"
@@ -100,7 +102,10 @@ test_version = ['ea6ba08','334db14']
 # {lib_name}_{commit_hash}
 conmmit_hash = "aba793e7"
 joern_project  = "ansible_6" # joern 项目名
-joern_bat_path = "C:/Users/86184/Desktop/joern-cli/joern.bat"
+joern_bat_path = os.environ.get(
+    "JOERN_PATH",
+    str(Path(root_path) / "joern-cli" / ("joern.bat" if os.name == "nt" else "joern")),
+)
 
 gpu_str = os.environ.get("FREE_GPUS", "")
 

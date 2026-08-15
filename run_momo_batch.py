@@ -2,6 +2,7 @@ import ctypes
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -9,16 +10,19 @@ import uuid
 from pathlib import Path
 
 
-ROOT = Path(r"C:\Users\86184\Desktop\Papers")
+ROOT = Path(__file__).resolve().parent.parent
 DATABASE_DIR = ROOT / "documentation" / "database"
 RESULTS_DIR = ROOT / "documentation" / "results"
 MOMO_DIR = ROOT / "Momo_test"
 CONFIG_PATH = MOMO_DIR / "config.py"
 DL_LIB_DIR = ROOT / "documentation" / "dl_lib"
-JOERN_BAT = Path(r"C:\Users\86184\Desktop\joern-cli\joern.bat")
+JOERN_EXE = ROOT / "joern-cli" / ("joern.bat" if os.name == "nt" else "joern")
+if not JOERN_EXE.exists():
+    JOERN_EXE = ROOT / "joern-cli" / "bin" / ("joern-cli.bat" if os.name == "nt" else "joern-cli")
 JOERN_WORKSPACE = MOMO_DIR / "workspace"
 BUGSINPY_DIR = DATABASE_DIR / "BugsInPy" / "projects"
 SKIPPED_DIR = DATABASE_DIR / "skipped_entries"
+RUNTIME_DIR = ROOT / ".momo_runtime"
 
 LIB_FILE = "ansible.txt"
 LIB_GITNAME = "ansible"
@@ -26,13 +30,20 @@ LIB_NAME = "ansible"
 START = 0
 END = None  # None 表示处理到最后一条记录
 
-MOMO_ENV = "momo_test"  # 算法环境（有 ML 依赖）
+BASE_PYTHON = Path(sys.executable).resolve()
+
+# macOS/base 环境运行策略：默认不创建 conda 环境、不安装依赖、不 pip install 待测库。
+# 被测库通过 PYTHONPATH 指向当前项目下的 documentation/dl_lib/{lib}。
+INSTALL_DEPENDENCIES = False
+INSTALL_TARGET_PACKAGE = False
 
 
 def is_admin():
+    if os.name != "nt":
+        return True
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except OSError:
+    except (AttributeError, OSError):
         return False
 
 
@@ -55,6 +66,51 @@ def run_no_check(command, cwd=None, env=None):
     print(f"\n>>> {command}", flush=True)
     result = subprocess.run(command, cwd=cwd, shell=True, env=env)
     return result.returncode == 0
+
+
+def quote_path(path):
+    return shlex.quote(str(path))
+
+
+def run_python(script, args="", cwd=None, env=None):
+    script_path = quote_path(script)
+    command = f"{quote_path(BASE_PYTHON)} -u {script_path}"
+    if args:
+        command = f"{command} {args}"
+    run(command, cwd=cwd, env=env)
+
+
+def make_base_env():
+    cache_dir = RUNTIME_DIR / "cache"
+    config_dir = RUNTIME_DIR / "config"
+    joern_home = RUNTIME_DIR / "joern"
+    for path in (RUNTIME_DIR, cache_dir, config_dir, joern_home):
+        path.mkdir(parents=True, exist_ok=True)
+
+    return {
+        **os.environ,
+        "MOMO_ROOT": str(ROOT),
+        "JOERN_PATH": str(JOERN_EXE),
+        "HOME": str(RUNTIME_DIR),
+        "XDG_CACHE_HOME": str(cache_dir),
+        "XDG_CONFIG_HOME": str(config_dir),
+        "JOERN_HOME": str(joern_home),
+    }
+
+
+def make_runtime_env(repo_dir):
+    python_paths = [
+        str(repo_dir),
+        str(repo_dir / "lib"),
+        str(MOMO_DIR),
+    ]
+    existing = os.environ.get("PYTHONPATH")
+    if existing:
+        python_paths.append(existing)
+
+    env = make_base_env()
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    return env
 
 
 def parse_lib_file(path):
@@ -123,35 +179,9 @@ def parse_lib_file(path):
     return records
 
 
-def conda_env_name(python_version):
-    return f"momo_test_{python_version}"
-
-
-def conda_env_exists(env_name):
-    result = subprocess.run("conda env list", shell=True, capture_output=True, text=True)
-    for line in result.stdout.splitlines():
-        if line.strip() and not line.startswith("#"):
-            parts = line.split()
-            if parts and parts[0] == env_name:
-                return True
-    return False
-
-
-def activate_conda_env(env_name):
-    if conda_env_exists(env_name):
-        print(f"conda 环境 {env_name} 已存在，直接激活。")
-    else:
-        python_version = env_name.replace("momo_test_", "")
-        print(f"conda 环境 {env_name} 不存在，正在创建 (python={python_version}) ...")
-        run(f"conda create -n {env_name} python={python_version} -y")
-    run(f"conda activate {env_name}")
-    run(f"conda run --no-capture-output -n {env_name} python -m pip install --upgrade wheel psutil pyyaml")
-    run(f'conda run --no-capture-output -n {env_name} pip install "setuptools<68"')
-
-
 def pip_install_env(env_name, args, cwd=None):
-    """在指定 conda 环境中执行 pip install。"""
-    run(f'conda run --no-capture-output -n {env_name} pip install {args}', cwd=cwd)
+    """在当前 base Python 中执行 pip install。默认主流程不会调用此函数。"""
+    run(f"{quote_path(BASE_PYTHON)} -m pip install {args}", cwd=cwd)
 
 
 def replace_config_string(name, value):
@@ -192,6 +222,10 @@ def install_requirements(env_name, bug_id, lib_gitname):
     req_path = BUGSINPY_DIR / lib_gitname / "bugs" / str(bug_id) / "requirements.txt"
     if not req_path.exists():
         print(f"未找到 requirements.txt: {req_path}，跳过依赖安装。")
+        return
+
+    if not INSTALL_DEPENDENCIES:
+        print(f"依赖安装已禁用，跳过: {req_path}")
         return
 
     print(f"安装依赖: {req_path}")
@@ -255,10 +289,11 @@ class JoernShell:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            encoding="gbk",
+            encoding="gbk" if os.name == "nt" else "utf-8",
             errors="replace",
-            shell=True,
+            shell=False,
             cwd=MOMO_DIR,
+            env=make_base_env(),
         )
 
     def send_command(self, cmd):
@@ -296,8 +331,8 @@ def import_with_joern(lib_gitname, lib_name, commit_hash):
         print(f"Joern project already exists, skip import: {project_name}")
         return
 
-    input_path = str(DL_LIB_DIR / lib_gitname).replace("\\", "\\\\")
-    joern = JoernShell(JOERN_BAT)
+    input_path = str(DL_LIB_DIR / lib_gitname).replace("\\", "\\\\").replace('"', '\\"')
+    joern = JoernShell(JOERN_EXE)
     try:
         output = joern.send_command(
             f'importCode(inputPath="{input_path}", projectName="{project_name}")'
@@ -324,6 +359,14 @@ def ensure_repo(lib_gitname):
 
 def checkout_version(repo_dir, commit_hash):
     run(f"git checkout {commit_hash}", cwd=repo_dir)
+
+
+def validate_local_layout():
+    required_paths = [DATABASE_DIR, MOMO_DIR, DL_LIB_DIR, JOERN_EXE]
+    missing = [path for path in required_paths if not path.exists()]
+    if missing:
+        missing_text = "\n".join(str(path) for path in missing)
+        raise FileNotFoundError(f"当前项目布局缺少必要路径：\n{missing_text}")
 
 
 def move_results(lib_name, bug_id):
@@ -372,20 +415,23 @@ def process_record(record, lib_gitname, lib_name):
     bug_hash = record["bug_version"]
     fix_hash = record["fix_version"]
     repo_dir = ensure_repo(lib_gitname)
-    env_name = conda_env_name(python_version)
+    env_name = "base"
+    env_with_path = make_runtime_env(repo_dir)
 
     print("\n" + "=" * 80)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     # 13) 清理中间文件
     print("\n--- 清理中间文件 ---")
     cleanup_intermediate_files(lib_name)
-    # 1) 环境准备：确保 momo_test（算法）和版本 env（测试）都存在
-    print("\n--- 环境准备 ---")
-    run("conda deactivate")
-    activate_conda_env(MOMO_ENV)
-    activate_conda_env(env_name)
 
-    # 2) 依赖准备 → 版本 env
+    # 1) 环境准备：使用启动脚本的当前 Python，不切换 conda 环境
+    print("\n--- 环境准备 (base/current Python) ---")
+    print(f"Project root: {ROOT}")
+    print(f"Python: {BASE_PYTHON}")
+    print(f"Joern: {JOERN_EXE}")
+    print(f"Target python_version metadata: {python_version or '(none)'}")
+
+    # 2) 依赖准备：默认只记录并跳过，不向 base 环境安装包
     print("\n--- 依赖准备 ---")
     install_requirements(env_name, bug_id, lib_gitname)
 
@@ -397,15 +443,15 @@ def process_record(record, lib_gitname, lib_name):
     print("\n--- 更新 config.py ---")
     update_config(lib_name, lib_gitname, bug_id)
 
-    # 5) 安装待测库 → 版本 env（测试用）
-    print("\n--- 安装待测库 (bug 版本) ---")
-    if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install .", cwd=repo_dir):
-        print("警告：待测库安装失败，尝试使用 pip install -e (开发模式)...")
-        if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install -e .", cwd=repo_dir):
-            print("警告：开发模式安装也失败。将通过 PYTHONPATH 添加库路径来兜底。")
-
-    # 设置环境变量，确保后续 conda run 命令能 import 被测库
-    env_with_path = {**os.environ, "PYTHONPATH": str(repo_dir)}
+    # 5) 待测库加载策略：默认不安装到 base 环境，只通过 PYTHONPATH 指向源码
+    print("\n--- 待测库加载 (bug 版本) ---")
+    if INSTALL_TARGET_PACKAGE:
+        if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install .", cwd=repo_dir, env=env_with_path):
+            print("警告：待测库安装失败，尝试使用 pip install -e (开发模式)...")
+            if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install -e .", cwd=repo_dir, env=env_with_path):
+                print("警告：开发模式安装也失败，将通过 PYTHONPATH 兜底。")
+    else:
+        print(f"跳过 pip install，使用 PYTHONPATH: {env_with_path['PYTHONPATH']}")
 
     # 6) 写入 API 定义文件
     print("\n--- 写入 API 定义文件 ---")
@@ -415,29 +461,32 @@ def process_record(record, lib_gitname, lib_name):
     print("\n--- Joern importCode ---")
     import_with_joern(lib_gitname, lib_name, bug_hash)
 
-    # 8) 执行 stage_2_function.py → momo_test（算法）
-    print("\n--- stage_2_function.py (momo_test) ---")
-    run(f'conda run --no-capture-output -n {MOMO_ENV} python -u stage_2_function.py', cwd=MOMO_DIR)
+    # 8) 执行 stage_2_function.py → 当前 base Python
+    print("\n--- stage_2_function.py (base/current Python) ---")
+    run_python("stage_2_function.py", cwd=MOMO_DIR, env=env_with_path)
 
-    # 9a) 执行 main.py 算法阶段 → momo_test（算法）
-    print("\n--- main.py --phase algo (momo_test) ---")
-    run(f'conda run --no-capture-output -n {MOMO_ENV} python -u main.py --phase algo', cwd=MOMO_DIR)
+    # 9a) 执行 main.py 算法阶段 → 当前 base Python
+    print("\n--- main.py --phase algo (base/current Python) ---")
+    run_python("main.py", "--phase algo", cwd=MOMO_DIR, env=env_with_path)
 
-    # 9b) 执行 main.py 测试阶段 → 版本 env（bug 版本测试，生成 V1 基线）
-    print("\n--- main.py --phase test (版本 env) ---")
-    run(f'conda run --no-capture-output -n {env_name} python -u main.py --phase test --k 500', cwd=MOMO_DIR, env=env_with_path)
+    # 9b) 执行 main.py 测试阶段 → 当前 base Python（bug 版本测试，生成 V1 基线）
+    print("\n--- main.py --phase test (base/current Python) ---")
+    run_python("main.py", "--phase test --k 500", cwd=MOMO_DIR, env=env_with_path)
 
-    # 10) 切换到 fix 版本并安装 → 版本 env
+    # 10) 切换到 fix 版本，仍只通过 PYTHONPATH 加载源码
     print("\n--- 切换到 fix 版本 ---")
     checkout_version(repo_dir, fix_hash)
-    if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install .", cwd=repo_dir, env=env_with_path):
-        print("警告：fix 版本安装失败。")
-    if not run_no_check(f"conda run --no-capture-output -n {env_name} pip install -e .", cwd=repo_dir, env=env_with_path):
-        print("警告：fix 版本开发模式安装也失败，将通过 PYTHONPATH 兜底。")
+    if INSTALL_TARGET_PACKAGE:
+        if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install .", cwd=repo_dir, env=env_with_path):
+            print("警告：fix 版本安装失败。")
+        if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install -e .", cwd=repo_dir, env=env_with_path):
+            print("警告：fix 版本开发模式安装也失败，将通过 PYTHONPATH 兜底。")
+    else:
+        print("跳过 fix 版本 pip install，继续使用 PYTHONPATH 加载源码。")
 
-    # 11) 执行 entrance.py → 版本 env（fix 版本测试，生成 V2 + diff）
-    print("\n--- entrance.py (版本 env) ---")
-    run(f'conda run --no-capture-output -n {env_name} python -u entrance.py', cwd=MOMO_DIR, env=env_with_path)
+    # 11) 执行 entrance.py → 当前 base Python（fix 版本测试，生成 V2 + diff）
+    print("\n--- entrance.py (base/current Python) ---")
+    run_python("entrance.py", cwd=MOMO_DIR, env=env_with_path)
 
     # 12) 移动结果文件
     print("\n--- 移动结果文件 ---")
@@ -451,6 +500,8 @@ def process_record(record, lib_gitname, lib_name):
 
 
 def main():
+    validate_local_layout()
+
     lib_file = Path(LIB_FILE)
     if not lib_file.is_absolute():
         lib_file = DATABASE_DIR / lib_file
@@ -473,7 +524,7 @@ def main():
 
 
 if __name__ == "__main__":
-    if not is_admin():
+    if os.name == "nt" and not is_admin():
         relaunch_as_admin()
 
     try:
