@@ -13,6 +13,8 @@ if __name__ == "__main__":
                       help="algo: algorithm only / test: test execution only / all: both")
   parser.add_argument("--k", type=int, default=500,
                       help="Number of test cases per API (K)")
+  parser.add_argument("--test-mode", choices=["auto", "v1", "v2"], default="auto",
+                      help="Explicit differential-test mode; auto keeps legacy baseline detection")
   args = parser.parse_args()
 
   random.seed(42)
@@ -33,6 +35,10 @@ if __name__ == "__main__":
       # 生成所有可能的组合 → arg_combinations
       base_condition_filter(api_names)
       print("base_condition_filter")
+
+      # base_condition_filter may remove APIs whose combinations are empty.
+      # Refresh the list so every downstream stage uses the same API set.
+      api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
 
       # 调用大模型检查参数组合是否合法 → error_combinations
       check_condition_filter(api_names)
@@ -68,7 +74,6 @@ if __name__ == "__main__":
       # ==========================================
 
       # V1/V2 差分测试 (发现regression)
-      run_test_cases(K=args.k)
+      run_test_cases(K=args.k, mode=args.test_mode)
 
       # run_test_cases(K=100)
-

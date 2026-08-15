@@ -10,107 +10,87 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("MOMO_ROOT", str(Path(__file__).resolve().parent.parent))).resolve()
 DL_LIB_ROOT = ROOT / "documentation" / "dl_lib"
+TARGET_REPO = os.environ.get("MOMO_TARGET_REPO")
 
 # Cache: {lib_gitname: {api_name: (file_path, node)}}
 _cache = {}
 
 
 def _find_package_root(lib_gitname):
-    """Locate the Python package directory under dl_lib/{lib_gitname}."""
+    """Locate the checked-out repository that contains the target library."""
+    if TARGET_REPO:
+        target = Path(TARGET_REPO).resolve()
+        if target.exists():
+            return target
+
     base = DL_LIB_ROOT / lib_gitname
     if not base.exists():
         return None
-
-    # Try common layouts in order
-    candidates = []
-
-    # Single-module: dl_lib/black/black.py — prefer this over sub-packages
-    single_module = base / f"{lib_gitname}.py"
-    if single_module.exists():
-        return base
-
-    # src-layout: dl_lib/black/src/black/
-    src_dir = base / "src"
-    if src_dir.is_dir():
-        for entry in src_dir.iterdir():
-            if entry.is_dir() and (entry / "__init__.py").exists():
-                candidates.append(entry)
-            elif entry.suffix == ".py":
-                candidates.append(entry)
-
-    # flat-layout: dl_lib/black/black/ (package dir)
-    for entry in base.iterdir():
-        if entry.is_dir() and entry.name not in ("src", ".git", "__pycache__", "tests", "docs", "test") and (entry / "__init__.py").exists():
-            if entry not in candidates:
-                candidates.append(entry)
-
-    # If we found package dirs, use the first one
-    if candidates:
-        return candidates[0]
-
-    # Fallback: return base itself (also handles single .py files)
     return base
 
 
 def _build_index(lib_gitname):
-    """Build a mapping of api_name -> (file_path, ast_node) for all top-level definitions."""
-    pkg_root = _find_package_root(lib_gitname)
-    if pkg_root is None:
+    """Build a mapping for functions, classes, methods and common source layouts."""
+    repo_root = _find_package_root(lib_gitname)
+    if repo_root is None:
         _cache[lib_gitname] = {}
         return
 
     index = {}
+    ignored_parts = {".git", ".tox", ".venv", "venv", "__pycache__"}
 
-    if pkg_root.is_dir():
-        # Walk all .py files
-        for py_file in pkg_root.rglob("*.py"):
-            if "__pycache__" in str(py_file):
+    if repo_root.is_dir():
+        for py_file in sorted(repo_root.rglob("*.py")):
+            if any(part in ignored_parts for part in py_file.parts):
                 continue
-            _index_file(py_file, pkg_root, index)
-    elif pkg_root.suffix == ".py":
-        _index_file(pkg_root, pkg_root.parent, index)
+            _index_file(py_file, repo_root, index)
+    elif repo_root.suffix == ".py":
+        _index_file(repo_root, repo_root.parent, index)
 
     _cache[lib_gitname] = index
 
 
-def _index_file(py_file, pkg_root, index):
-    """Parse a .py file and add its top-level definitions to the index."""
+def _index_file(py_file, repo_root, index):
+    """Parse a file and index definitions under repository and import aliases."""
     try:
         source = py_file.read_text(encoding="utf-8", errors="replace")
         tree = ast.parse(source)
     except (SyntaxError, UnicodeDecodeError):
         return
 
-    # Compute module path from file path
-    if pkg_root.is_dir():
-        rel_path = py_file.relative_to(pkg_root)
-    else:
-        rel_path = py_file.relative_to(pkg_root.parent)
+    rel_path = py_file.relative_to(repo_root)
     parts = list(rel_path.parts)
     if parts[-1] == "__init__.py":
         parts = parts[:-1]
     else:
         parts[-1] = parts[-1].replace(".py", "")
-    module_prefix = ".".join(parts)
+
+    module_prefixes = [".".join(parts)]
+    if len(parts) > 1 and parts[0] in {"src", "lib"}:
+        module_prefixes.append(".".join(parts[1:]))
+    module_prefixes = [prefix.strip(".") for prefix in module_prefixes]
+
+    def register(node, qualified_name):
+        for module_prefix in module_prefixes:
+            full_name = ".".join(
+                part for part in (module_prefix, qualified_name) if part
+            )
+            index.setdefault(full_name, (str(py_file), node))
+        index.setdefault(node.name, (str(py_file), node))
+
+    def visit_definition(node, parent_name=""):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return
+        qualified_name = ".".join(
+            part for part in (parent_name, node.name) if part
+        )
+        register(node, qualified_name)
+        if isinstance(node, ast.ClassDef):
+            for child in ast.iter_child_nodes(node):
+                visit_definition(child, qualified_name)
 
     for node in ast.iter_child_nodes(tree):
-        name = None
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            name = node.name
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    name = target.id
-                    break
-
-        if name:
-            full_name = f"{module_prefix}.{name}" if module_prefix else name
-            # Strip leading dots from relative imports
-            full_name = full_name.lstrip(".")
-            index[full_name] = (str(py_file), node)
-            # Also index just the short name for direct lookups
-            if name not in index:
-                index[name] = (str(py_file), node)
+        visit_definition(node)
 
 
 def _ensure_index(lib_gitname):

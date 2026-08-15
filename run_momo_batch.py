@@ -1,12 +1,17 @@
+import argparse
 import ctypes
 import json
 import os
+import queue
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -14,28 +19,53 @@ ROOT = Path(__file__).resolve().parent.parent
 DATABASE_DIR = ROOT / "documentation" / "database"
 RESULTS_DIR = ROOT / "documentation" / "results"
 MOMO_DIR = ROOT / "Momo_test"
-CONFIG_PATH = MOMO_DIR / "config.py"
 DL_LIB_DIR = ROOT / "documentation" / "dl_lib"
-JOERN_EXE = ROOT / "joern-cli" / ("joern.bat" if os.name == "nt" else "joern")
-if not JOERN_EXE.exists():
-    JOERN_EXE = ROOT / "joern-cli" / "bin" / ("joern-cli.bat" if os.name == "nt" else "joern-cli")
-JOERN_WORKSPACE = MOMO_DIR / "workspace"
 BUGSINPY_DIR = DATABASE_DIR / "BugsInPy" / "projects"
 SKIPPED_DIR = DATABASE_DIR / "skipped_entries"
 RUNTIME_DIR = ROOT / ".momo_runtime"
+JOERN_WORKSPACE = RUNTIME_DIR / "workspace"
 
-LIB_FILE = "ansible.txt"
-LIB_GITNAME = "ansible"
-LIB_NAME = "ansible"
+JOERN_EXE = ROOT / "joern-cli" / ("joern.bat" if os.name == "nt" else "joern")
+if not JOERN_EXE.exists():
+    JOERN_EXE = ROOT / "joern-cli" / "bin" / (
+        "joern-cli.bat" if os.name == "nt" else "joern-cli"
+    )
+
+LIB_FILE = "black.txt"
+LIB_GITNAME = "black"
+LIB_NAME = "black"
 START = 0
-END = None  # None 表示处理到最后一条记录
-
+END = 1
+DEFAULT_K = 10
 BASE_PYTHON = Path(sys.executable).resolve()
 
-# macOS/base 环境运行策略：默认不创建 conda 环境、不安装依赖、不 pip install 待测库。
-# 被测库通过 PYTHONPATH 指向当前项目下的 documentation/dl_lib/{lib}。
+# Disabled by default because both options mutate the selected Python environment.
 INSTALL_DEPENDENCIES = False
 INSTALL_TARGET_PACKAGE = False
+
+
+INTERMEDIATE_PATTERNS = {
+    "api_guards": ["{lib}_api_guards.json"],
+    "api_input": ["{lib}_default_inputs_*.json", "{lib}_inputs_*.json"],
+    "api_src_code": ["{lib}_api_sources.json"],
+    "arg_boundary": ["cut_{lib}_boundary_*.json", "{lib}_boundary_*.json"],
+    "arg_combinations": [
+        "{lib}_cut_combinations_*.json",
+        "{lib}_combinations_*.json",
+    ],
+    "arg_space": ["{lib}_arg_space_*.json"],
+    "error_combinations": ["error_{lib}_combinations.json"],
+    "conditions": ["{lib}_conditions.json"],
+    "test_cases": ["{lib}_case_*.json"],
+}
+
+RESULT_PATTERNS = [
+    "{lib}_v1_baseline*.json",
+    "{lib}_diff_report*.json",
+    "{lib}_recursion_bugs*.json",
+    "{lib}_timeout_bugs*.json",
+    "{lib}_crash_bugs*.json",
+]
 
 
 def is_admin():
@@ -50,33 +80,44 @@ def is_admin():
 def relaunch_as_admin():
     script = Path(__file__).resolve()
     args = " ".join([f'"{script}"', *[f'"{arg}"' for arg in sys.argv[1:]]])
-    result = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, args, str(MOMO_DIR), 1)
+    result = ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", sys.executable, args, str(MOMO_DIR), 1
+    )
     if result <= 32:
         raise RuntimeError(f"管理员权限启动失败，ShellExecuteW 返回值：{result}")
     print("已请求管理员权限重新启动脚本，当前非管理员进程退出。")
     sys.exit(0)
 
 
-def run(command, cwd=None, env=None):
-    print(f"\n>>> {command}", flush=True)
-    subprocess.run(command, cwd=cwd, shell=True, check=True, env=env)
+def _display_command(command):
+    if isinstance(command, str):
+        return command
+    try:
+        return shlex.join(str(part) for part in command)
+    except AttributeError:
+        return " ".join(shlex.quote(str(part)) for part in command)
 
 
-def run_no_check(command, cwd=None, env=None):
-    print(f"\n>>> {command}", flush=True)
-    result = subprocess.run(command, cwd=cwd, shell=True, env=env)
-    return result.returncode == 0
+def run(command, cwd=None, env=None, check=True, timeout=None):
+    print(f"\n>>> {_display_command(command)}", flush=True)
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        shell=isinstance(command, str),
+        check=check,
+        env=env,
+        timeout=timeout,
+    )
 
 
-def quote_path(path):
-    return shlex.quote(str(path))
+def run_no_check(command, cwd=None, env=None, timeout=None):
+    return run(command, cwd=cwd, env=env, check=False, timeout=timeout).returncode == 0
 
 
-def run_python(script, args="", cwd=None, env=None):
-    script_path = quote_path(script)
-    command = f"{quote_path(BASE_PYTHON)} -u {script_path}"
+def run_python(script, args=None, cwd=None, env=None, python_executable=BASE_PYTHON):
+    command = [str(python_executable), "-u", str(script)]
     if args:
-        command = f"{command} {args}"
+        command.extend(str(arg) for arg in args)
     run(command, cwd=cwd, env=env)
 
 
@@ -84,21 +125,27 @@ def make_base_env():
     cache_dir = RUNTIME_DIR / "cache"
     config_dir = RUNTIME_DIR / "config"
     joern_home = RUNTIME_DIR / "joern"
-    for path in (RUNTIME_DIR, cache_dir, config_dir, joern_home):
+    for path in (
+        RUNTIME_DIR,
+        cache_dir,
+        config_dir,
+        joern_home,
+        JOERN_WORKSPACE,
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
     return {
         **os.environ,
         "MOMO_ROOT": str(ROOT),
+        "MOMO_RUNTIME_DIR": str(RUNTIME_DIR),
         "JOERN_PATH": str(JOERN_EXE),
-        "HOME": str(RUNTIME_DIR),
         "XDG_CACHE_HOME": str(cache_dir),
         "XDG_CONFIG_HOME": str(config_dir),
         "JOERN_HOME": str(joern_home),
     }
 
 
-def make_runtime_env(repo_dir):
+def make_runtime_env(repo_dir, lib_name, lib_gitname, joern_project):
     python_paths = [
         str(repo_dir),
         str(repo_dir / "lib"),
@@ -109,168 +156,254 @@ def make_runtime_env(repo_dir):
         python_paths.append(existing)
 
     env = make_base_env()
-    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    env.update(
+        {
+            "PYTHONPATH": os.pathsep.join(python_paths),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONHASHSEED": "0",
+            "MOMO_LIB_NAME": lib_name,
+            "MOMO_LIB_GITNAME": lib_gitname,
+            "MOMO_TARGET_REPO": str(Path(repo_dir).resolve()),
+            "MOMO_JOERN_PROJECT": joern_project,
+            "MOMO_USE_SOURCE_RESOLVER": "1",
+        }
+    )
     return env
 
 
 def parse_lib_file(path):
-    text = path.read_text(encoding="utf-8")
+    text = Path(path).read_text(encoding="utf-8")
     records = []
 
-    for block in re.split(r"^--------\s*$", text, flags=re.MULTILINE):
-        lines = [line.rstrip() for line in block.splitlines() if line.strip() or (line.endswith("") and not line.strip())]
-        if not lines:
+    for block_index, block in enumerate(
+        re.split(r"^--------\s*$", text, flags=re.MULTILINE), start=1
+    ):
+        lines = block.splitlines()
+        if not any(line.strip() for line in lines):
             continue
 
         bug_id = None
-        python_version = None
+        python_version = ""
         bug_hash = None
         fix_hash = None
         apis = []
         in_api_section = False
+        invalid = False
 
         for line in lines:
-            if not line.strip():
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            match = re.match(r"^bug_id:\s*(.+)$", line)
+            if match:
+                try:
+                    bug_id = int(match.group(1).strip())
+                except ValueError:
+                    print(f"警告：第 {block_index} 块的 bug_id 非整数，已跳过。")
+                    invalid = True
                 in_api_section = False
                 continue
 
-            m = re.match(r"^bug_id:\s*(.+)$", line)
-            if m:
-                bug_id = int(m.group(1).strip())
+            match = re.match(r"^python_version:\s*(.+)$", line)
+            if match:
+                python_version = match.group(1).strip()
+                in_api_section = False
                 continue
 
-            m = re.match(r"^python_version:\s*(.+)$", line)
-            if m:
-                python_version = m.group(1).strip()
+            match = re.match(r"^buggy:\s*(.+)$", line)
+            if match:
+                bug_hash = match.group(1).strip()
+                in_api_section = False
                 continue
 
-            m = re.match(r"^buggy:\s*(.+)$", line)
-            if m:
-                bug_hash = m.group(1).strip()
+            match = re.match(r"^fixed:\s*(.+)$", line)
+            if match:
+                fix_hash = match.group(1).strip()
+                in_api_section = False
                 continue
 
-            m = re.match(r"^fixed:\s*(.+)$", line)
-            if m:
-                fix_hash = m.group(1).strip()
-                continue
-
-            m = re.match(r"^bug_api:\s*$", line)
-            if m:
+            if re.match(r"^bug_api:\s*$", line):
                 in_api_section = True
                 continue
 
-            if in_api_section:
-                api_line = line.strip()
-                if api_line and api_line != "(none)":
-                    apis.append(api_line)
+            if in_api_section and stripped != "(none)":
+                apis.append(stripped)
 
-        if bug_id is None or not bug_hash or not fix_hash:
-            print(f"警告：跳过缺少必要字段的条目 (bug_id={bug_id}, buggy={bug_hash}, fixed={fix_hash})")
+        if invalid or bug_id is None or not bug_hash or not fix_hash or not apis:
+            print(
+                "警告：跳过字段不完整的条目 "
+                f"(bug_id={bug_id}, buggy={bug_hash}, fixed={fix_hash}, apis={len(apis)})"
+            )
             continue
 
-        records.append({
-            "bug_id": bug_id,
-            "python_version": python_version or "",
-            "bug_version": bug_hash,
-            "fix_version": fix_hash,
-            "bug_api": apis,
-        })
+        records.append(
+            {
+                "bug_id": bug_id,
+                "python_version": python_version,
+                "bug_version": bug_hash,
+                "fix_version": fix_hash,
+                "bug_api": apis,
+            }
+        )
 
     return records
 
 
-def pip_install_env(env_name, args, cwd=None):
-    """在当前 base Python 中执行 pip install。默认主流程不会调用此函数。"""
-    run(f"{quote_path(BASE_PYTHON)} -m pip install {args}", cwd=cwd)
-
-
-def replace_config_string(name, value):
-    text = CONFIG_PATH.read_text(encoding="utf-8")
-    pattern = re.compile(rf'^(\s*{re.escape(name)}\s*=\s*)(["\']).*?\2(.*)$', re.MULTILINE)
-    new_text, count = pattern.subn(rf'\1"{value}"\3', text, count=1)
-    if count != 1:
-        raise ValueError(f"未在 {CONFIG_PATH} 中找到字符串配置项：{name}")
-    CONFIG_PATH.write_text(new_text, encoding="utf-8")
-
-
-def replace_config_bool(name, value):
-    """替换 config.py 中的布尔/None 配置项（如 USE_SOURCE_RESOLVER = False）"""
-    text = CONFIG_PATH.read_text(encoding="utf-8")
-    pattern = re.compile(rf'^(\s*{re.escape(name)}\s*=\s*)(True|False|None)(.*)$', re.MULTILINE)
-    new_text, count = pattern.subn(rf'\1{value}\3', text, count=1)
-    if count != 1:
-        raise ValueError(f"未在 {CONFIG_PATH} 中找到布尔配置项：{name}")
-    CONFIG_PATH.write_text(new_text, encoding="utf-8")
-
-
-def update_config(lib_name, lib_gitname, bug_id):
-    joern_project = f"{lib_name}_{bug_id}"
-    replace_config_string("lib_name", lib_name)
-    replace_config_string("lib_gitname", lib_gitname)
-    replace_config_string("joern_project", joern_project)
-    replace_config_bool("USE_SOURCE_RESOLVER", "True")
-
-
 def _is_prerelease_version(line):
-    """检查依赖行是否指定了预发布版本号（dev/alpha/beta/rc），PyPI 通常不提供这些版本。"""
-    import re
-    return bool(re.search(r'==[^;]*\.dev\d+', line.lower())
-                or re.search(r'==[^;]*(?:alpha|beta|rc)\d*', line.lower(), re.IGNORECASE))
+    return bool(
+        re.search(r"==[^;]*\.dev\d+", line.lower())
+        or re.search(
+            r"==[^;]*(?:alpha|beta|rc)\d*", line.lower(), re.IGNORECASE
+        )
+    )
 
 
-def install_requirements(env_name, bug_id, lib_gitname):
+def install_requirements(bug_id, lib_gitname, python_executable):
     req_path = BUGSINPY_DIR / lib_gitname / "bugs" / str(bug_id) / "requirements.txt"
     if not req_path.exists():
         print(f"未找到 requirements.txt: {req_path}，跳过依赖安装。")
         return
 
-    if not INSTALL_DEPENDENCIES:
-        print(f"依赖安装已禁用，跳过: {req_path}")
-        return
-
     print(f"安装依赖: {req_path}")
-
-    # 过滤掉 -e git+ 可编辑安装行（它们指向的 commit 可能已不在当前仓库中）
-    # 以及已知的与 setuptools 不兼容的老旧包
-    KNOWN_BROKEN = {"accessify", "funcsigs", "pathlib2", "scandir", "functools32", "typing"}
-    lines = req_path.read_bytes()
-
-    # 处理 UTF-16 编码（用 UTF-8 读取会看到空字节，decode 会失败或给出一堆 NUL）
+    known_broken = {
+        "accessify",
+        "funcsigs",
+        "pathlib2",
+        "scandir",
+        "functools32",
+        "typing",
+    }
+    raw = req_path.read_bytes()
     try:
-        text = lines.decode("utf-8-sig")
+        text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = lines.decode("utf-16-le")
+        text = raw.decode("utf-16-le")
 
     filtered = []
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             filtered.append(line)
-        elif stripped.startswith("-e"):
+            continue
+        if stripped.startswith("-e"):
             print(f"跳过可编辑安装: {stripped}")
+            continue
+        pkg_name = re.split(r"==|>=|<=|>|<", stripped, maxsplit=1)[0].strip()
+        if pkg_name.lower() in known_broken:
+            print(f"跳过已知不兼容包: {stripped}")
+        elif _is_prerelease_version(stripped):
+            print(f"跳过预发布版本: {stripped}")
         else:
-            # 检查是否为已知问题包
-            pkg_name = stripped.split("==")[0].split(">=")[0].split("<=")[0].split(">")[0].split("<")[0].strip()
-            if pkg_name.lower() in {k.lower() for k in KNOWN_BROKEN}:
-                print(f"跳过已知不兼容包: {stripped}")
-            # 跳过 dev/alpha/beta/rc 预发布版本（PyPI 通常不提供这些版本）
-            elif _is_prerelease_version(stripped):
-                print(f"跳过预发布版本: {stripped}")
-            else:
-                filtered.append(line)
+            filtered.append(line)
 
     filtered_text = "\n".join(filtered)
-    if filtered_text.strip():
-        temp_req = req_path.with_suffix(".tmp.txt")
-        temp_req.write_text(filtered_text, encoding="utf-8")
-        try:
-            pip_install_env(env_name, f'-r "{temp_req}"')
-        except subprocess.CalledProcessError:
-            print("警告：部分依赖安装失败，尝试继续...")
-        finally:
-            temp_req.unlink(missing_ok=True)
-    else:
+    if not filtered_text.strip():
         print("过滤后无有效依赖，跳过安装。")
+        return
+
+    temp_dir = RUNTIME_DIR / "requirements"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_req = temp_dir / f"{lib_gitname}_{bug_id}.txt"
+    temp_req.write_text(filtered_text, encoding="utf-8")
+    try:
+        if not run_no_check(
+            [str(python_executable), "-m", "pip", "install", "-r", str(temp_req)]
+        ):
+            print("警告：部分依赖安装失败，继续使用当前环境。")
+    finally:
+        if temp_req.exists():
+            temp_req.unlink()
+
+
+def install_target_package(repo_dir, env, python_executable):
+    normal = [
+        str(python_executable),
+        "-m",
+        "pip",
+        "install",
+        ".",
+    ]
+    editable = [
+        str(python_executable),
+        "-m",
+        "pip",
+        "install",
+        "-e",
+        ".",
+    ]
+    if run_no_check(normal, cwd=repo_dir, env=env):
+        return True
+    print("普通安装失败，尝试 editable 安装。")
+    if run_no_check(editable, cwd=repo_dir, env=env):
+        return True
+    print("警告：目标库安装失败，将继续使用 PYTHONPATH。")
+    return False
+
+
+def _venv_python(venv_dir):
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+def _has_runner_dependencies(python_executable):
+    result = subprocess.run(
+        [
+            str(python_executable),
+            "-c",
+            "import openai; import yaml; import psutil; import json_repair",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def ensure_runner_python(python_executable, bootstrap=True):
+    if _has_runner_dependencies(python_executable):
+        return Path(python_executable).resolve()
+    if not bootstrap:
+        raise RuntimeError(
+            "运行解释器缺少核心依赖。请执行 "
+            f"{python_executable} -m pip install -r "
+            f"{MOMO_DIR / 'requirements-runner.txt'}"
+        )
+
+    version = subprocess.check_output(
+        [
+            str(python_executable),
+            "-c",
+            "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')",
+        ],
+        text=True,
+    ).strip()
+    venv_dir = RUNTIME_DIR / f"runner-py{version}"
+    worker_python = _venv_python(venv_dir)
+    if not worker_python.exists():
+        print(f"创建隔离 runner 环境: {venv_dir}")
+        run([str(python_executable), "-m", "venv", str(venv_dir)])
+
+    requirements = MOMO_DIR / "requirements-runner.txt"
+    print(f"安装 runner 依赖: {requirements}")
+    run(
+        [
+            str(worker_python),
+            "-m",
+            "pip",
+            "install",
+            "--timeout",
+            "30",
+            "--retries",
+            "2",
+            "-r",
+            str(requirements),
+        ],
+        timeout=600,
+    )
+    if not _has_runner_dependencies(worker_python):
+        raise RuntimeError(f"runner 依赖安装后仍不可导入: {worker_python}")
+    return worker_python.resolve()
 
 
 def write_api_defs(lib_name, apis):
@@ -282,9 +415,10 @@ def write_api_defs(lib_name, apis):
 
 
 class JoernShell:
-    def __init__(self, joern_bat_path):
+    def __init__(self, joern_path):
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         self.process = subprocess.Popen(
-            [str(joern_bat_path)],
+            [str(joern_path)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -292,25 +426,45 @@ class JoernShell:
             encoding="gbk" if os.name == "nt" else "utf-8",
             errors="replace",
             shell=False,
-            cwd=MOMO_DIR,
+            cwd=RUNTIME_DIR,
             env=make_base_env(),
         )
+        self.output_queue = queue.Queue()
+        self.reader = threading.Thread(target=self._read_output, daemon=True)
+        self.reader.start()
 
-    def send_command(self, cmd):
+    def _read_output(self):
+        try:
+            for line in iter(self.process.stdout.readline, ""):
+                self.output_queue.put(line)
+        finally:
+            self.output_queue.put(None)
+
+    def send_command(self, command, timeout=1800):
+        if self.process.poll() is not None:
+            raise RuntimeError(f"Joern 已退出，退出码: {self.process.returncode}")
+
         marker = f"__JOERN_CMD_DONE_{uuid.uuid4().hex}__"
-        self.process.stdin.write(f"{cmd}\n")
-        self.process.stdin.flush()
+        self.process.stdin.write(f"{command}\n")
         self.process.stdin.write(f'println("{marker}")\n')
         self.process.stdin.flush()
 
         output_lines = []
+        deadline = time.monotonic() + timeout
         while True:
-            line = self.process.stdout.readline()
-            if not line:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Joern 命令执行超过 {timeout} 秒: {command}")
+            try:
+                line = self.output_queue.get(timeout=remaining)
+            except queue.Empty:
+                raise TimeoutError(f"Joern 命令执行超过 {timeout} 秒: {command}")
+            if line is None:
                 break
             if marker in line:
                 break
             output_lines.append(line)
+
         output = "".join(output_lines)
         if output.strip():
             print(output, end="" if output.endswith("\n") else "\n")
@@ -319,19 +473,25 @@ class JoernShell:
     def close(self):
         if self.process.poll() is None:
             try:
-                self.send_command("exit")
-            finally:
-                self.process.terminate()
+                self.send_command("exit", timeout=15)
+            except (RuntimeError, TimeoutError):
+                pass
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=10)
 
 
-def import_with_joern(lib_gitname, lib_name, commit_hash):
-    project_name = f"{lib_name}_{commit_hash}"
+def import_with_joern(repo_dir, project_name):
     project_dir = JOERN_WORKSPACE / project_name
     if project_dir.exists():
         print(f"Joern project already exists, skip import: {project_name}")
         return
 
-    input_path = str(DL_LIB_DIR / lib_gitname).replace("\\", "\\\\").replace('"', '\\"')
+    input_path = str(Path(repo_dir).resolve()).replace("\\", "\\\\").replace('"', '\\"')
     joern = JoernShell(JOERN_EXE)
     try:
         output = joern.send_command(
@@ -345,190 +505,418 @@ def import_with_joern(lib_gitname, lib_name, commit_hash):
         joern.close()
 
 
-def ensure_repo(lib_gitname):
-    """确保 dl_lib 下存在对应仓库，不存在则尝试 clone。"""
+def _is_git_repository(repo_dir):
+    result = subprocess.run(
+        ["git", "-C", str(repo_dir), "rev-parse", "--git-dir"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def ensure_repo(lib_gitname, repo_url=None):
     repo_dir = DL_LIB_DIR / lib_gitname
     if repo_dir.exists():
+        if not _is_git_repository(repo_dir):
+            raise RuntimeError(f"目标目录不是 Git 仓库: {repo_dir}")
         return repo_dir
-    print(f"仓库目录不存在: {repo_dir}")
-    clone_url = f"https://github.com/psf/{lib_gitname}.git"
-    print(f"尝试 clone: {clone_url}")
-    run(f"git clone {clone_url} \"{repo_dir}\"")
+
+    if not repo_url:
+        raise FileNotFoundError(
+            f"仓库不存在: {repo_dir}。请通过 --repo-url 提供该第三方库的仓库地址。"
+        )
+    repo_dir.parent.mkdir(parents=True, exist_ok=True)
+    run(["git", "clone", repo_url, str(repo_dir)])
     return repo_dir
 
 
-def checkout_version(repo_dir, commit_hash):
-    run(f"git checkout {commit_hash}", cwd=repo_dir)
+def verify_commit(repo_dir, commit_hash):
+    result = subprocess.run(
+        ["git", "-C", str(repo_dir), "cat-file", "-e", f"{commit_hash}^{{commit}}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"仓库中不存在 commit: {commit_hash}")
 
 
-def validate_local_layout():
-    required_paths = [DATABASE_DIR, MOMO_DIR, DL_LIB_DIR, JOERN_EXE]
-    missing = [path for path in required_paths if not path.exists()]
-    if missing:
-        missing_text = "\n".join(str(path) for path in missing)
-        raise FileNotFoundError(f"当前项目布局缺少必要路径：\n{missing_text}")
+@contextmanager
+def managed_worktree(repo_dir, commit_hash, label, keep=False):
+    worktree_root = RUNTIME_DIR / "worktrees"
+    worktree_root.mkdir(parents=True, exist_ok=True)
+    worktree_path = worktree_root / f"{label}-{uuid.uuid4().hex[:8]}"
+
+    run(
+        [
+            "git",
+            "-C",
+            str(repo_dir),
+            "worktree",
+            "add",
+            "--detach",
+            str(worktree_path),
+            commit_hash,
+        ]
+    )
+    try:
+        yield worktree_path
+    finally:
+        if not keep:
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_dir),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(worktree_path),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if worktree_path.exists():
+                shutil.rmtree(worktree_path, ignore_errors=True)
+            subprocess.run(
+                ["git", "-C", str(repo_dir), "worktree", "prune"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            print(f"保留 worktree: {worktree_path}")
 
 
-def move_results(lib_name, bug_id):
-    target_dir = RESULTS_DIR / lib_name / f"{lib_name}_{bug_id}"
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    for filename in [
-        f"{lib_name}_diff_report.json",
-        f"{lib_name}_recursion_bugs.json",
-        f"{lib_name}_timeout_bugs.json",
-        f"{lib_name}_v1_baseline.json",
-    ]:
-        source = RESULTS_DIR / filename
-        if source.exists():
-            destination = target_dir / filename
-            if destination.exists():
-                destination.unlink()
-            shutil.move(str(source), str(destination))
-            print(f"Moved {source} -> {destination}")
+def _unlink_patterns(base_dir, patterns):
+    if not base_dir.exists():
+        return
+    for pattern in patterns:
+        for path in base_dir.glob(pattern):
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+                print(f"Deleted {path}")
 
 
 def cleanup_intermediate_files(lib_name):
-    paths = [
-        ROOT / "documentation" / "api_guards" / f"{lib_name}_api_guards.json",
-        ROOT / "documentation" / "api_input" / f"{lib_name}_default_inputs_0.json",
-        ROOT / "documentation" / "api_input" / f"{lib_name}_inputs_0.json",
-        ROOT / "documentation" / "api_src_code" / f"{lib_name}_api_sources.json",
-        ROOT / "documentation" / "arg_boundary" / f"cut_{lib_name}_boundary_0.json",
-        ROOT / "documentation" / "arg_combinations" / f"{lib_name}_cut_combinations_0.json",
-        ROOT / "documentation" / "arg_combinations" / f"{lib_name}_combinations_0.json",
-        ROOT / "documentation" / "arg_space" / f"{lib_name}_arg_space_0.json",
-        ROOT / "documentation" / "error_combinations" / f"error_{lib_name}_combinations.json",
-        ROOT / "documentation" / "conditions" / f"{lib_name}_conditions.json",
-        ROOT / "documentation" / "test_cases" / f"{lib_name}_case_0.json",
-    ]
-
-    for path in paths:
-        if path.exists():
-            path.unlink()
-            print(f"Deleted {path}")
+    documentation = ROOT / "documentation"
+    for subdir, patterns in INTERMEDIATE_PATTERNS.items():
+        formatted = [pattern.format(lib=lib_name) for pattern in patterns]
+        _unlink_patterns(documentation / subdir, formatted)
 
 
-def process_record(record, lib_gitname, lib_name):
+def cleanup_transient_results(lib_name):
+    patterns = [pattern.format(lib=lib_name) for pattern in RESULT_PATTERNS]
+    _unlink_patterns(RESULTS_DIR, patterns)
+
+
+def move_results(lib_name, bug_id, record, metadata):
+    target_dir = RESULTS_DIR / lib_name / f"{lib_name}_{bug_id}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for pattern in RESULT_PATTERNS:
+        for old_path in target_dir.glob(pattern.format(lib=lib_name)):
+            if old_path.is_file():
+                old_path.unlink()
+
+    moved = []
+    for pattern in RESULT_PATTERNS:
+        formatted = pattern.format(lib=lib_name)
+        for source in sorted(RESULTS_DIR.glob(formatted)):
+            if not source.is_file():
+                continue
+            destination = target_dir / source.name
+            if destination.exists():
+                destination.unlink()
+            shutil.move(str(source), str(destination))
+            moved.append(destination.name)
+            print(f"Moved {source} -> {destination}")
+
+    baseline_prefix = f"{lib_name}_v1_baseline"
+    if not any(name.startswith(baseline_prefix) for name in moved):
+        raise RuntimeError(f"记录 {bug_id} 未生成 V1 baseline，不能视为执行成功。")
+
+    failure_path = target_dir / "failure.json"
+    if failure_path.exists():
+        failure_path.unlink()
+    manifest = {
+        "status": "success",
+        "record": record,
+        "metadata": metadata,
+        "artifacts": moved,
+    }
+    (target_dir / "run_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def write_failure(lib_name, record, error):
+    target_dir = RESULTS_DIR / lib_name / f"{lib_name}_{record['bug_id']}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for pattern in RESULT_PATTERNS:
+        for old_path in target_dir.glob(pattern.format(lib=lib_name)):
+            if old_path.is_file():
+                old_path.unlink()
+    manifest_path = target_dir / "run_manifest.json"
+    if manifest_path.exists():
+        manifest_path.unlink()
+    payload = {
+        "status": "failed",
+        "record": record,
+        "error_type": type(error).__name__,
+        "error": str(error),
+    }
+    (target_dir / "failure.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def should_use_joern(mode, lib_name, apis):
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    return lib_name == "torch" or any(api.split("(", 1)[0].startswith("torch.") for api in apis)
+
+
+def process_record(record, repo_dir, options):
     bug_id = record["bug_id"]
-    python_version = record["python_version"]
     bug_hash = record["bug_version"]
     fix_hash = record["fix_version"]
-    repo_dir = ensure_repo(lib_gitname)
-    env_name = "base"
-    env_with_path = make_runtime_env(repo_dir)
+    project_name = f"{options.lib_name}_{re.sub(r'[^A-Za-z0-9_.-]', '_', bug_hash)}"
 
     print("\n" + "=" * 80)
     print(json.dumps(record, ensure_ascii=False, indent=2))
-    # 13) 清理中间文件
-    print("\n--- 清理中间文件 ---")
-    cleanup_intermediate_files(lib_name)
+    cleanup_intermediate_files(options.lib_name)
+    cleanup_transient_results(options.lib_name)
 
-    # 1) 环境准备：使用启动脚本的当前 Python，不切换 conda 环境
-    print("\n--- 环境准备 (base/current Python) ---")
-    print(f"Project root: {ROOT}")
-    print(f"Python: {BASE_PYTHON}")
-    print(f"Joern: {JOERN_EXE}")
-    print(f"Target python_version metadata: {python_version or '(none)'}")
+    if options.install_dependencies:
+        install_requirements(bug_id, options.lib_gitname, options.python)
 
-    # 2) 依赖准备：默认只记录并跳过，不向 base 环境安装包
-    print("\n--- 依赖准备 ---")
-    install_requirements(env_name, bug_id, lib_gitname)
+    try:
+        write_api_defs(options.lib_name, record["bug_api"])
 
-    # 3) 更新源代码为 bug 版本
-    print("\n--- 更新源代码为 bug 版本 ---")
-    checkout_version(repo_dir, bug_hash)
+        with managed_worktree(
+            repo_dir,
+            bug_hash,
+            f"{options.lib_name}-{bug_id}-bug",
+            keep=options.keep_worktrees,
+        ) as bug_repo:
+            bug_env = make_runtime_env(
+                bug_repo,
+                options.lib_name,
+                options.lib_gitname,
+                project_name,
+            )
+            if options.install_target_package:
+                install_target_package(bug_repo, bug_env, options.python)
 
-    # 4) 修改 config.py
-    print("\n--- 更新 config.py ---")
-    update_config(lib_name, lib_gitname, bug_id)
+            if should_use_joern(options.joern, options.lib_name, record["bug_api"]):
+                print("\n--- Joern importCode ---")
+                import_with_joern(bug_repo, project_name)
+            else:
+                print("\n--- Joern skipped (Python-only library) ---")
 
-    # 5) 待测库加载策略：默认不安装到 base 环境，只通过 PYTHONPATH 指向源码
-    print("\n--- 待测库加载 (bug 版本) ---")
-    if INSTALL_TARGET_PACKAGE:
-        if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install .", cwd=repo_dir, env=env_with_path):
-            print("警告：待测库安装失败，尝试使用 pip install -e (开发模式)...")
-            if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install -e .", cwd=repo_dir, env=env_with_path):
-                print("警告：开发模式安装也失败，将通过 PYTHONPATH 兜底。")
-    else:
-        print(f"跳过 pip install，使用 PYTHONPATH: {env_with_path['PYTHONPATH']}")
+            print("\n--- stage_2_function.py (bug version) ---")
+            run_python(
+                "stage_2_function.py",
+                cwd=MOMO_DIR,
+                env=bug_env,
+                python_executable=options.python,
+            )
 
-    # 6) 写入 API 定义文件
-    print("\n--- 写入 API 定义文件 ---")
-    write_api_defs(lib_name, record["bug_api"])
+            print("\n--- main.py --phase algo (bug version) ---")
+            run_python(
+                "main.py",
+                args=["--phase", "algo"],
+                cwd=MOMO_DIR,
+                env=bug_env,
+                python_executable=options.python,
+            )
 
-    # 7) 启动 Joern 并 importCode
-    print("\n--- Joern importCode ---")
-    import_with_joern(lib_gitname, lib_name, bug_hash)
+            print("\n--- main.py --phase test --test-mode v1 (bug version) ---")
+            run_python(
+                "main.py",
+                args=[
+                    "--phase",
+                    "test",
+                    "--test-mode",
+                    "v1",
+                    "--k",
+                    str(options.k),
+                ],
+                cwd=MOMO_DIR,
+                env=bug_env,
+                python_executable=options.python,
+            )
 
-    # 8) 执行 stage_2_function.py → 当前 base Python
-    print("\n--- stage_2_function.py (base/current Python) ---")
-    run_python("stage_2_function.py", cwd=MOMO_DIR, env=env_with_path)
+        with managed_worktree(
+            repo_dir,
+            fix_hash,
+            f"{options.lib_name}-{bug_id}-fix",
+            keep=options.keep_worktrees,
+        ) as fix_repo:
+            fix_env = make_runtime_env(
+                fix_repo,
+                options.lib_name,
+                options.lib_gitname,
+                project_name,
+            )
+            if options.install_target_package:
+                install_target_package(fix_repo, fix_env, options.python)
 
-    # 9a) 执行 main.py 算法阶段 → 当前 base Python
-    print("\n--- main.py --phase algo (base/current Python) ---")
-    run_python("main.py", "--phase algo", cwd=MOMO_DIR, env=env_with_path)
+            print("\n--- entrance.py --test-mode v2 (fix version) ---")
+            run_python(
+                "entrance.py",
+                args=["--test-mode", "v2"],
+                cwd=MOMO_DIR,
+                env=fix_env,
+                python_executable=options.python,
+            )
 
-    # 9b) 执行 main.py 测试阶段 → 当前 base Python（bug 版本测试，生成 V1 基线）
-    print("\n--- main.py --phase test (base/current Python) ---")
-    run_python("main.py", "--phase test --k 500", cwd=MOMO_DIR, env=env_with_path)
-
-    # 10) 切换到 fix 版本，仍只通过 PYTHONPATH 加载源码
-    print("\n--- 切换到 fix 版本 ---")
-    checkout_version(repo_dir, fix_hash)
-    if INSTALL_TARGET_PACKAGE:
-        if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install .", cwd=repo_dir, env=env_with_path):
-            print("警告：fix 版本安装失败。")
-        if not run_no_check(f"{quote_path(BASE_PYTHON)} -m pip install -e .", cwd=repo_dir, env=env_with_path):
-            print("警告：fix 版本开发模式安装也失败，将通过 PYTHONPATH 兜底。")
-    else:
-        print("跳过 fix 版本 pip install，继续使用 PYTHONPATH 加载源码。")
-
-    # 11) 执行 entrance.py → 当前 base Python（fix 版本测试，生成 V2 + diff）
-    print("\n--- entrance.py (base/current Python) ---")
-    run_python("entrance.py", cwd=MOMO_DIR, env=env_with_path)
-
-    # 12) 移动结果文件
-    print("\n--- 移动结果文件 ---")
-    move_results(lib_name, bug_id)
-
-    # 13) 清理中间文件
-    print("\n--- 清理中间文件 ---")
-    cleanup_intermediate_files(lib_name)
-
-    return True
+        metadata = {
+            "controller_python": str(BASE_PYTHON),
+            "worker_python": str(options.python),
+            "requested_python_version": record["python_version"],
+            "joern_mode": options.joern,
+            "test_cases_per_api": options.k,
+        }
+        move_results(options.lib_name, bug_id, record, metadata)
+        return True
+    finally:
+        cleanup_intermediate_files(options.lib_name)
+        cleanup_transient_results(options.lib_name)
 
 
-def main():
-    validate_local_layout()
+def _validate_name(value, option_name):
+    if not re.match(r"^[A-Za-z0-9_.-]+$", value):
+        raise ValueError(f"{option_name} 包含非法字符: {value}")
 
-    lib_file = Path(LIB_FILE)
+
+def validate_local_layout(options, lib_file, joern_required):
+    required_paths = [DATABASE_DIR, MOMO_DIR, DL_LIB_DIR, lib_file, options.python]
+    if joern_required:
+        required_paths.append(JOERN_EXE)
+    missing = [Path(path) for path in required_paths if not Path(path).exists()]
+    if missing:
+        raise FileNotFoundError(
+            "当前项目布局缺少必要路径：\n" + "\n".join(str(path) for path in missing)
+        )
+    if shutil.which("git") is None:
+        raise FileNotFoundError("未找到 git 可执行文件。")
+    if options.k <= 0:
+        raise ValueError("--k 必须大于 0。")
+    _validate_name(options.lib_name, "--lib-name")
+    _validate_name(options.lib_gitname, "--lib-gitname")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="Run source-guided differential tests for a Python third-party library."
+    )
+    parser.add_argument("--lib-file", default=LIB_FILE)
+    parser.add_argument("--lib-name", default=LIB_NAME)
+    parser.add_argument("--lib-gitname", default=LIB_GITNAME)
+    parser.add_argument("--repo-url", default=None)
+    parser.add_argument("--start", type=int, default=START)
+    parser.add_argument("--end", type=int, default=END)
+    parser.add_argument("--k", type=int, default=DEFAULT_K)
+    parser.add_argument("--python", type=Path, default=BASE_PYTHON)
+    parser.add_argument(
+        "--joern",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="auto only enables Joern for currently supported native-code libraries.",
+    )
+    parser.add_argument(
+        "--install-dependencies",
+        action="store_true",
+        default=INSTALL_DEPENDENCIES,
+    )
+    parser.add_argument(
+        "--install-target-package",
+        action="store_true",
+        default=INSTALL_TARGET_PACKAGE,
+    )
+    parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument("--keep-worktrees", action="store_true")
+    parser.add_argument(
+        "--no-bootstrap-runner",
+        action="store_false",
+        dest="bootstrap_runner",
+        default=True,
+        help="Do not create an isolated runner venv when core dependencies are missing.",
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Validate input, repository and commits without running the pipeline.",
+    )
+    return parser
+
+
+def main(argv=None):
+    options = build_parser().parse_args(argv)
+    options.python = options.python.expanduser().resolve()
+
+    lib_file = Path(options.lib_file)
     if not lib_file.is_absolute():
         lib_file = DATABASE_DIR / lib_file
 
     records = parse_lib_file(lib_file)
-    selected = records[START:END]
+    selected = records[options.start : options.end]
+    joern_required = any(
+        should_use_joern(options.joern, options.lib_name, record["bug_api"])
+        for record in selected
+    )
+    validate_local_layout(options, lib_file, joern_required)
+    repo_dir = ensure_repo(options.lib_gitname, options.repo_url)
+    options.python = ensure_runner_python(
+        options.python, bootstrap=options.bootstrap_runner
+    )
+
+    for record in selected:
+        verify_commit(repo_dir, record["bug_version"])
+        verify_commit(repo_dir, record["fix_version"])
 
     print(f"Loaded {len(records)} records from {lib_file}")
+    print(f"Selected {len(selected)} records [{options.start}:{options.end}]")
     print(json.dumps(selected, ensure_ascii=False, indent=2))
 
-    for index, record in enumerate(selected, start=START):
-        print(f"\nProcessing record #{index} (bug_id={record['bug_id']})")
-        process_record(record, LIB_GITNAME, LIB_NAME)
+    if options.preflight_only:
+        print("Preflight passed.")
+        return 0
 
-    # 恢复 config.py 默认状态
-    replace_config_bool("USE_SOURCE_RESOLVER", "False")
+    failures = []
+    for index, record in enumerate(selected, start=options.start):
+        print(f"\nProcessing record #{index} (bug_id={record['bug_id']})")
+        try:
+            process_record(record, repo_dir, options)
+        except Exception as error:
+            failures.append(record["bug_id"])
+            write_failure(options.lib_name, record, error)
+            print(
+                f"记录 {record['bug_id']} 执行失败: "
+                f"{type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
+            if options.fail_fast:
+                raise
 
     print(f"\n{'=' * 80}")
-    print(f"Done. Processed: {len(selected)} records.")
+    print(f"Done. Processed: {len(selected)}, failed: {len(failures)}")
+    if failures:
+        print(f"Failed bug IDs: {failures}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
     if os.name == "nt" and not is_admin():
         relaunch_as_admin()
-
     try:
-        main()
-    except subprocess.CalledProcessError as exc:
-        print(f"命令执行失败，退出码：{exc.returncode}", file=sys.stderr)
-        sys.exit(exc.returncode)
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("用户中断执行。", file=sys.stderr)
+        sys.exit(130)
+    except Exception as error:
+        print(f"启动失败: {type(error).__name__}: {error}", file=sys.stderr)
+        sys.exit(1)

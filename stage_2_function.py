@@ -1,6 +1,9 @@
 from config import *
-from typing import List, Dict
+from typing import List, Dict, Optional
 from stage_1_function import *
+import queue
+import threading
+import time
 '''
 用于在 PyTorch 库中抽取 API 的 Guard 条件。
 
@@ -10,12 +13,21 @@ from stage_1_function import *
 
 # 通用库配置 - 根据 config.py 中的 lib_name 动态设置
 # PyTorch 特定配置（仅当 lib_name == "torch" 时使用）
-TORCH_PATH = Path(root_path) / "documentation" / "dl_lib" / lib_gitname if lib_name == "torch" else None
+_configured_repo = os.environ.get("MOMO_TARGET_REPO")
+TORCH_PATH = (
+    Path(_configured_repo)
+    if lib_name == "torch" and _configured_repo
+    else Path(root_path) / "documentation" / "dl_lib" / lib_gitname
+    if lib_name == "torch"
+    else None
+)
 YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml" if TORCH_PATH else None
 
 
 def _make_local_runtime_env():
-    runtime_dir = Path(root_path) / ".momo_runtime"
+    runtime_dir = Path(
+        os.environ.get("MOMO_RUNTIME_DIR", str(Path(root_path) / ".momo_runtime"))
+    )
     cache_dir = runtime_dir / "cache"
     config_dir = runtime_dir / "config"
     joern_home = runtime_dir / "joern"
@@ -52,10 +64,23 @@ class JoernShell:
             encoding="gbk" if os.name == "nt" else "utf-8",
             errors="replace",
             shell=False,
+            cwd=str(Path(os.environ.get(
+                "MOMO_RUNTIME_DIR", str(Path(root_path) / ".momo_runtime")
+            ))),
             env=_make_local_runtime_env(),
         )
+        self.output_queue = queue.Queue()
+        self.reader = threading.Thread(target=self._read_output, daemon=True)
+        self.reader.start()
 
-    def send_command(self, cmd):
+    def _read_output(self):
+        try:
+            for line in iter(self.process.stdout.readline, ""):
+                self.output_queue.put(line)
+        finally:
+            self.output_queue.put(None)
+
+    def send_command(self, cmd, timeout=1800):
         """
         向 Joern 发送命令，并读取 stdout 输出
         支持每条命令唯一 marker，避免上一次命令干扰
@@ -72,9 +97,16 @@ class JoernShell:
 
         # 读取输出直到 marker 出现
         output_lines = []
+        deadline = time.monotonic() + timeout
         while True:
-            line = self.process.stdout.readline()
-            if not line:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Joern command timed out after {timeout}s: {cmd}")
+            try:
+                line = self.output_queue.get(timeout=remaining)
+            except queue.Empty:
+                raise TimeoutError(f"Joern command timed out after {timeout}s: {cmd}")
+            if line is None:
                 break  # 进程结束
             if marker in line:
                 break
@@ -220,6 +252,8 @@ def torch_find_cpp_name(api_name: str) -> str:
     # 如果不是 torch 或 YAML 文件不存在，返回 None
     if not api_name.startswith("torch.") or not YAML_PATH or not YAML_PATH.exists():
         return None
+    if yaml is None:
+        raise RuntimeError("PyYAML is required for PyTorch native_functions.yaml analysis")
 
     func_target = api_name.split(".")[-1]
     # print(func_target)
@@ -831,7 +865,7 @@ def torch_extract_guards(api_name: str):
 # Guard 规范化阶段
 # =====================================================
 
-def filter_guards_by_args(guards: list[str], api_name: str, keep_self: bool = False) -> list[str]:
+def filter_guards_by_args(guards: List[str], api_name: str, keep_self: bool = False) -> List[str]:
     """
     改进版（更宽松匹配逻辑）：
       - 仅要 guard 中含有任意参数名（如 input, bias）即保留；
@@ -985,7 +1019,7 @@ def normalize_guards_stage(raw_guards: dict, api_name: str) -> dict:
 # 批量提取并规范化 guards
 # =====================================================
 
-def generate_normalized_guards(api_names: list[str]):
+def generate_normalized_guards(api_names: List[str]):
     """
     批量提取并规范化 guards。
     基础版：
@@ -1084,7 +1118,7 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
     if func_node is None:
         return []
 
-    def match_guard(expr: str, guards: list[dict]) -> str:
+    def match_guard(expr: str, guards: List[Dict]) -> str:
         for g in guards:
             if g.get("expr") == expr:
                 return g["expr"]
@@ -1102,7 +1136,7 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
 
     paths = []
 
-    def append_path(guards: list[str], path_type: str, ret_value: ast.AST | None):
+    def append_path(guards: List[str], path_type: str, ret_value: Optional[ast.AST]):
         calls_cpp = False
         if path_type == "return_fun" and isinstance(ret_value, ast.Call):
             calls_cpp = True
@@ -1118,7 +1152,7 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
             "sat": True
         })
 
-    def exec_block(stmts: list[ast.stmt], guards_prefix: list[str]):
+    def exec_block(stmts: List[ast.stmt], guards_prefix: List[str]):
         guards = guards_prefix[:]
         i = 0
         n = len(stmts)
@@ -1731,7 +1765,3 @@ if __name__ == "__main__":
             print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")
 
     print("\n✅ 所有 API 已处理完毕，结果保存在：", save_path)
-
-
-
-

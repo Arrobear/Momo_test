@@ -1,4 +1,7 @@
-glom==24.11.0
+json-repair>=0.30
+openai>=1.0
+psutil>=5.9
+PyYAML>=6.0
 
 about-time==4.2.1
 absl-py==2.3.1

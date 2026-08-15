@@ -11,6 +11,8 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--k", type=int, default=200,
                       help="Number of test cases per API (K)")
+  parser.add_argument("--test-mode", choices=["auto", "v1", "v2"], default="auto",
+                      help="Explicit differential-test mode; auto keeps legacy baseline detection")
   args = parser.parse_args()
 
   random.seed(42)
@@ -64,11 +66,10 @@ if __name__ == "__main__":
   # ==========================================
 
   # V1/V2 差分测试 (发现regression)
-  run_test_cases(K=500)
+  run_test_cases(K=args.k, mode=args.test_mode)
 
   # run_test_cases(K=100)
 
   # 蜕变测试 (发现latent bug — 不依赖版本)
   # run_metamorphic_tests(num_samples=10)
-
 

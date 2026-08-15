@@ -33,8 +33,33 @@ call_llm_with_retry(client, model, messages, **kwargs)：带无限重试的LLM A
 
 
 def call_llm_with_retry(client, model, messages, **kwargs):
+    def extract_content(response):
+        if isinstance(response, str):
+            try:
+                parsed = json.loads(response)
+            except (TypeError, json.JSONDecodeError):
+                return response
+            response = parsed
+
+        if isinstance(response, dict):
+            choices = response.get("choices") or []
+            if choices:
+                message = choices[0].get("message") or {}
+                return message.get("content")
+            return response.get("content")
+
+        choices = getattr(response, "choices", None) or []
+        if choices:
+            message = getattr(choices[0], "message", None)
+            return getattr(message, "content", None)
+        return getattr(response, "content", None)
+
     kwargs.setdefault("timeout", 300)
-    while True:
+    max_retries = int(os.environ.get("MOMO_LLM_MAX_RETRIES", "5"))
+    if max_retries < 1:
+        max_retries = 1
+    last_error = None
+    for attempt in range(1, max_retries + 1):
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -42,13 +67,17 @@ def call_llm_with_retry(client, model, messages, **kwargs):
                 stream=False,
                 **kwargs
             )
-            content = response.choices[0].message.content
+            content = extract_content(response)
             if content is None:
                 raise ValueError("API returned None content, retrying...")
             return content
         except Exception as e:
-            print(f"[API 错误] {e}，3秒后重试...")
+            last_error = e
+            if attempt >= max_retries:
+                break
+            print(f"[API 错误] {e}，3秒后重试 ({attempt}/{max_retries})...")
             time.sleep(3)
+    raise RuntimeError(f"LLM API 在 {max_retries} 次尝试后仍失败: {last_error}")
 
 
 
@@ -316,8 +345,47 @@ def get_all_parameters(api_name: str):
     # 选择对应的参数列表提取方法提取参数参数列表
 
 
+def extract_signature_parameters(api_def):
+    """Extract parameter names and required parameters from an API definition."""
+    start = api_def.find("(")
+    end = api_def.rfind(")")
+    if start == -1 or end <= start:
+        return [], []
+
+    parameter_text = api_def[start + 1:end]
+    try:
+        tree = ast.parse(f"def _momo_signature({parameter_text}):\n    pass\n")
+        arguments = tree.body[0].args
+        positional = list(getattr(arguments, "posonlyargs", [])) + list(arguments.args)
+        names = [arg.arg for arg in positional]
+        positional_required_count = len(positional) - len(arguments.defaults)
+        required = [arg.arg for arg in positional[:positional_required_count]]
+
+        if arguments.vararg is not None:
+            names.append(arguments.vararg.arg)
+        for arg, default in zip(arguments.kwonlyargs, arguments.kw_defaults):
+            names.append(arg.arg)
+            if default is None:
+                required.append(arg.arg)
+        if arguments.kwarg is not None:
+            names.append(arguments.kwarg.arg)
+        return names, required
+    except SyntaxError:
+        names = []
+        for fragment in parameter_text.split(","):
+            candidate = fragment.strip().lstrip("*")
+            if not candidate or candidate == "/":
+                continue
+            candidate = candidate.split("=", 1)[0].split(":", 1)[0].strip()
+            if candidate.isidentifier():
+                names.append(candidate)
+        return names, []
+
+
 #获取所有参数的组合
 def generate_all_combinations(args):
+    if not args:
+        return [[]]
     all_combinations = []
     for r in range(1, len(args) + 1):
         combinations = itertools.combinations(args, r)
@@ -806,106 +874,46 @@ def extract_invalid_parameter_combinations():
 # 统一读取json接口
 #-------------------------------------
 def read_json_api(api_name, file_path, read_mode):
-    if read_mode == "combination":
-        j = 0
-        path = file_path+f'{lib_name}_combinations_{j}.json'
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            return None
-        if api_name in data:
-            return data[api_name]
-        else:
-            return None
-
-    elif read_mode == "error_combinations":
-        path = file_path+f'error_{lib_name}_combinations.json'
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
-
-    elif read_mode == "arg_space":
-        j = 0
-        path = file_path+f'{lib_name}_arg_space_{j}.json'
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            return None
-        if api_name in data:
-            return data[api_name]
-        else:
-            return None
-    elif read_mode == "src_code":
-        path = file_path+f'{lib_name}_api_sources.json'
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
-    elif read_mode == "conditions":
-        path = file_path+f'{lib_name}_conditions.json'
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
-    elif read_mode == "boundary":
-        path = file_path+f'cut_{lib_name}_boundary_0.json'
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
-    elif read_mode == "default_input":
-        path = file_path+f'{lib_name}_default_inputs_0.json'
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if api_name in data:
-            return data[api_name] 
-    elif read_mode == "inputs":
-        j = 0
-        while j <= 20:
-            path = file_path + f'{lib_name}_inputs_{j}.json'
-            if not os.path.exists(path):
-                break
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if api_name in data:
-                    return data[api_name]
-            except (json.JSONDecodeError, IOError):
-                pass
-            j += 1
+    patterns_by_mode = {
+        "combination": [f"{lib_name}_combinations_*.json"],
+        "error_combinations": [f"error_{lib_name}_combinations.json"],
+        "arg_space": [f"{lib_name}_arg_space_*.json"],
+        "src_code": [f"{lib_name}_api_sources.json"],
+        "conditions": [f"{lib_name}_conditions.json"],
+        "boundary": [
+            f"cut_{lib_name}_boundary_*.json",
+            f"{lib_name}_boundary_*.json",
+        ],
+        "default_input": [f"{lib_name}_default_inputs_*.json"],
+        "inputs": [f"{lib_name}_inputs_*.json"],
+        "case": [f"{lib_name}_case_*.json"],
+        "cut_combination": [f"{lib_name}_cut_combinations_*.json"],
+    }
+    patterns = patterns_by_mode.get(read_mode)
+    if patterns is None:
         return None
-    elif read_mode == "case":
-        j = 0
-        while j <= 20:
-            path = file_path + f'{lib_name}_case_{j}.json'
-            if not os.path.exists(path):
-                break
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if api_name in data:
-                    return data[api_name]
-            except (json.JSONDecodeError, IOError):
-                pass
-            j += 1
-        return None
-    elif read_mode == "cut_combination":
-        j = 0
-        path = file_path+f'{lib_name}_cut_combinations_{j}.json'
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            return None
-        if api_name in data:
-            return data[api_name]
-        else:
-            return None
+
+    source_path = Path(file_path)
+    if source_path.suffix == ".json":
+        candidates = [source_path]
     else:
-        return None
+        candidates = []
+        for pattern in patterns:
+            candidates.extend(source_path.glob(pattern))
+
+    def page_number(path):
+        match = re.search(r"_(\d+)\.json$", path.name)
+        return int(match.group(1)) if match else -1
+
+    for path in sorted(set(candidates), key=lambda item: (page_number(item), item.name)):
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            continue
+        if isinstance(data, dict) and api_name in data:
+            return data[api_name]
+    return None
 
 # =========================================
 # 保存 API 输入信息的工具函数
@@ -1327,7 +1335,11 @@ def cut_combinations(api_names):
             for key in condition["Parameter type"]:
                 all_param.append(key)
             arg_combinations = read_json_api(api_name=api_name, file_path=f"../documentation/arg_combinations/", read_mode="combination")
-            error_combinations = read_json_api(api_name=api_names, file_path=f"../documentation/error_combinations/", read_mode="error_combination")
+            error_combinations = read_json_api(
+                api_name=api_name,
+                file_path="../documentation/error_combinations/",
+                read_mode="error_combinations",
+            )
             arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
             if arg_combinations is None or arg_spaces is None:
                 continue

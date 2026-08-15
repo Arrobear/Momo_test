@@ -15,7 +15,10 @@ except ImportError:
     infer_auto_device_map = init_empty_weights = None
 from torch_samename import *
 from pathlib import Path
-import yaml
+try:
+    import yaml
+except ImportError:
+    yaml = None
 import importlib
 import inspect
 import ast
@@ -24,7 +27,10 @@ import subprocess
 import time
 import uuid
 import gc
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 import traceback
 from itertools import product
 try:
@@ -41,9 +47,14 @@ import random
 
 # root_path = "/data/chaoni/haoyahui"
 root_path = os.environ.get("MOMO_ROOT", str(Path(__file__).resolve().parent.parent))
+target_repo_path = os.environ.get("MOMO_TARGET_REPO")
 
 # 将被测库的源码目录加到 sys.path，确保 pip install 失败时也能 import 被测库
 _dl_lib_dir = os.path.join(root_path, "documentation", "dl_lib")
+if target_repo_path:
+    for _candidate in (target_repo_path, os.path.join(target_repo_path, "lib")):
+        if os.path.isdir(_candidate) and _candidate not in sys.path:
+            sys.path.insert(0, _candidate)
 if os.path.isdir(_dl_lib_dir):
     for _entry in os.listdir(_dl_lib_dir):
         _candidate = os.path.join(_dl_lib_dir, _entry)
@@ -53,8 +64,8 @@ for _name in ("_dl_lib_dir", "_entry", "_candidate"):
     if _name in globals():
         del globals()[_name]
 
-API_KEY = "su8-8e384b5f169adcf570dd40aa9b"
-BASE_URL = "https://www.su8.codes/v1"
+API_KEY = "sk-c0af31d9322254a8e4e2472f49d4c0e68f157c17c796e9aaffaa797f93104296"
+BASE_URL = "https://www.yunshucode.com"
 MODEL = "gpt-5.5"
 
 def make_client():
@@ -91,17 +102,19 @@ except ImportError:
     parse = None
 
 
-USE_SOURCE_RESOLVER = True  # True: AST方式读源码 / False: 原importlib方式
+USE_SOURCE_RESOLVER = os.environ.get(
+    "MOMO_USE_SOURCE_RESOLVER", "1"
+).strip().lower() not in {"0", "false", "no", "off"}
 
-lib_name = "ansible"  # 库名称
-lib_gitname = "ansible"
+lib_name = os.environ.get("MOMO_LIB_NAME", "ansible")
+lib_gitname = os.environ.get("MOMO_LIB_GITNAME", "ansible")
 test_version = ['ea6ba08','334db14']
 
 # test.cpp
 # joern_project  = "pytorch-2.5.1" # joern 项目名
 # {lib_name}_{commit_hash}
 conmmit_hash = "aba793e7"
-joern_project  = "ansible_6" # joern 项目名
+joern_project = os.environ.get("MOMO_JOERN_PROJECT", "ansible_6")
 joern_bat_path = os.environ.get(
     "JOERN_PATH",
     str(Path(root_path) / "joern-cli" / ("joern.bat" if os.name == "nt" else "joern")),

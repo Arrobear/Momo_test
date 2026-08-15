@@ -71,6 +71,30 @@ def generate_api_conditions(api_names):
         # handle_output 需要根据线上输出微调（API 不会带入 prompt 本身，仅输出结果）
         # 传递 model_path 可能是为了在 handle_output 中做逻辑判断，予以保留
         api_conditions = extract_clean_json(outputs_text)
+        parameter_names, required_parameters = extract_signature_parameters(api_def)
+        if not isinstance(api_conditions, dict):
+            api_conditions = {}
+        parameter_types = api_conditions.get("Parameter type")
+        used_signature_fallback = not isinstance(parameter_types, dict) or not parameter_types
+        if used_signature_fallback:
+            print(f"[条件回退] {function_name} 使用函数签名恢复参数列表")
+            api_conditions["Parameter type"] = {
+                parameter_name: "unknown"
+                for parameter_name in parameter_names
+            }
+        mandatory_parameters = api_conditions.get("Mandatory Parameters")
+        if (
+            not isinstance(mandatory_parameters, list)
+            or used_signature_fallback and not mandatory_parameters
+        ):
+            api_conditions["Mandatory Parameters"] = required_parameters
+        for condition_key in (
+            "Mutually Exclusive Parameter Pairs",
+            "Mandatory Coexistence Parameters",
+            "Conditional Mutual Exclusion Parameters",
+        ):
+            if not isinstance(api_conditions.get(condition_key), list):
+                api_conditions[condition_key] = []
         
         # print("_________________________________________________________________________________________________________")
         # print(api_conditions)
@@ -111,24 +135,28 @@ def base_condition_filter(api_names):
         # 核心逻辑修改：如果组合为空，记录待删除
         # ==========================================
         if not filtered_combinations:
-            print(f"[-] API '{function_name}' 的参数组合过滤后为空，标记为待删除。")
-            apis_to_remove.add(function_name)
-        else:
-            # 只有在组合不为空时，才执行存储逻辑
-            path = root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            
-            if os.path.exists(path):
-                if is_file_too_large(path, max_size_mb=10):
-                    j += 1
-                    path = root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
-            
-            # 如果文件不存在，初始化空 JSON
-            if not os.path.exists(path):
-                with open(path, 'w') as f:
-                    json.dump({}, f)
+            mandatory = [
+                parameter for parameter in conditions.get("Mandatory Parameters", [])
+                if parameter in args
+            ]
+            fallback = mandatory or list(args)
+            filtered_combinations = [fallback]
+            print(f"[组合回退] {function_name} 保留签名组合: {fallback}")
 
-            append_filtered_combinations_to_json(path, function_name, filtered_combinations)
+        path = root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        if os.path.exists(path):
+            if is_file_too_large(path, max_size_mb=10):
+                j += 1
+                path = root_path + f'/documentation/arg_combinations/{lib_name}_combinations_{j}.json'
+        
+        # 如果文件不存在，初始化空 JSON
+        if not os.path.exists(path):
+            with open(path, 'w') as f:
+                json.dump({}, f)
+
+        append_filtered_combinations_to_json(path, function_name, filtered_combinations)
 
         i += 1
 
@@ -251,7 +279,12 @@ def generate_api_boundary(api_names):
         conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
         arg_spaces = read_json_api(api_name=api_names[i], file_path=f"../documentation/arg_space/", read_mode="arg_space")
 
-        if arg_combinations is None or arg_spaces is None:
+        if (
+            arg_combinations is None
+            or arg_spaces is None
+            or not isinstance(conditions, dict)
+            or "Parameter type" not in conditions
+        ):
             add_log(root_path + f"/Momo_test/{lib_name}_log.txt", api_name)
             i += 1
             continue
@@ -333,6 +366,10 @@ def generate_default_inputs(api_names):
         
         # 读取该 API 的参数类型条件
         conditions = read_json_api(api_name=api_name, file_path=f"../documentation/conditions/", read_mode="conditions")
+        if not isinstance(conditions, dict) or "Parameter type" not in conditions:
+            print(f"[跳过] {api_name} 缺少参数条件，无法生成默认输入")
+            i += 1
+            continue
         
         print(f"进度: {i+1}/{length_api_names} | 正在处理 API: {api_name}")
         
@@ -496,6 +533,10 @@ def generate_api_input(api_names):
             print(f"[跳过] {api_name} 缺少 conditions，跳过")
             i += 1
             continue
+        if not isinstance(api_boundarys, list):
+            api_boundarys = []
+        if api_code is None:
+            api_code = {}
 
         arg_dict = api_conditions["Parameter type"]
         api_inputs_candidate = {}
@@ -608,16 +649,26 @@ def _load_run_api(api_name):
     code_str = _extract_run_api_code(case)
     if code_str is None:
         return None
-    local_namespace = {}
     try:
         exec_globals = dict(globals())
+        # Dataset API names may include repository-layout prefixes such as
+        # "lib.ansible...". Import the longest valid module path and expose
+        # its root package so generated code can resolve the exact API name.
+        api_parts = api_name.split(".")
+        for end in range(len(api_parts) - 1, 0, -1):
+            try:
+                importlib.import_module(".".join(api_parts[:end]))
+                exec_globals[api_parts[0]] = importlib.import_module(api_parts[0])
+                break
+            except ImportError:
+                continue
         try:
             lib_mod = importlib.import_module(lib_name)
             exec_globals[lib_name] = lib_mod
         except ImportError:
             print(f"[警告] 无法导入库 {lib_name}，run_api 可能无法正常执行")
-        exec(code_str, exec_globals, local_namespace)
-        return local_namespace.get("run_api")
+        exec(code_str, exec_globals)
+        return exec_globals.get("run_api")
     except Exception as e:
         print(f"解析 {api_name} 的 case 代码失败: {e}")
         return None
@@ -1347,8 +1398,7 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
     print(f"正在加载 V1 基线数据: {baseline_path} ...")
     v1_baseline = _load_paginated_baseline(baseline_path)
     if not v1_baseline:
-        print(f"错误: 基线为空或文件不存在。请先运行 V1 录制。")
-        return
+        raise FileNotFoundError(f"基线为空或文件不存在，请先运行 V1 录制: {baseline_path}")
 
     diff_report = []
     total_apis = len(v1_baseline)
@@ -1481,37 +1531,50 @@ def run_test_cases_v2(baseline_path=None, report_path=None):
     # 4. 输出差分报告
     print("\n" + "=" * 50)
     total_cases = sum(len(cases) for cases in v1_baseline.values())
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(diff_report, f, ensure_ascii=False, indent=4)
+
     if diff_report:
         print(f"测试完毕。{len(diff_report)}/{total_cases} 个用例存在版本行为差异！")
-        os.makedirs(os.path.dirname(report_path), exist_ok=True)
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump(diff_report, f, ensure_ascii=False, indent=4)
         print(f"差分报告已保存至: {report_path}")
     else:
         print(f"测试通过：{total_cases} 个用例均未发现版本行为差异，向下兼容。")
+        print(f"空差分报告已保存至: {report_path}")
 
 
 # ------------------------------------
 # 统一测试入口
 # ------------------------------------
-def run_test_cases(K=100):
+def run_test_cases(K=100, mode="auto"):
     """
     差分测试统一入口。
-    自动检测 V1 基线是否存在：
-    - 无基线 → V1 模式：录制基准数据
-    - 有基线 → V2 模式：执行差分测试并生成报告
+    mode="auto" 时按基线是否存在自动切换；批处理应显式传入 v1/v2，
+    避免中断后残留文件改变执行语义。
     """
     baseline_path = root_path + f'/documentation/results/{lib_name}_v1_baseline.json'
     report_path = root_path + f'/documentation/results/{lib_name}_diff_report.json'
 
-    if os.path.exists(baseline_path):
+    if mode not in ("auto", "v1", "v2"):
+        raise ValueError(f"未知测试模式: {mode}")
+
+    selected_mode = mode
+    if selected_mode == "auto":
+        selected_mode = "v2" if os.path.exists(baseline_path) else "v1"
+
+    if selected_mode == "v2":
         print("=" * 50)
-        print("[V2 模式] 检测到 V1 基线，运行差分测试...")
+        print("[V2 模式] 回放 V1 基线并运行差分测试...")
         print("=" * 50)
         run_test_cases_v2(baseline_path=baseline_path, report_path=report_path)
     else:
+        base_no_ext = baseline_path.replace(".json", "")
+        for page_index in range(20):
+            old_path = baseline_path if page_index == 0 else f"{base_no_ext}_{page_index}.json"
+            if os.path.exists(old_path):
+                os.remove(old_path)
         print("=" * 50)
-        print("[V1 模式] 未检测到基线，运行基准录制...")
+        print("[V1 模式] 运行基准录制...")
         print("=" * 50)
         run_test_cases_v1(K=K, output_path=baseline_path)
         # 自动生成递归 bug 汇总报告
