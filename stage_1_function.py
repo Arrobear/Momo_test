@@ -70,6 +70,12 @@ def call_llm_with_retry(client, model, messages, **kwargs):
             content = extract_content(response)
             if content is None:
                 raise ValueError("API returned None content, retrying...")
+            if isinstance(content, str):
+                normalized = content.lstrip().lower()
+                if normalized.startswith("<!doctype html") or normalized.startswith("<html"):
+                    raise ValueError(
+                        "LLM endpoint returned an HTML page instead of model output"
+                    )
             return content
         except Exception as e:
             last_error = e

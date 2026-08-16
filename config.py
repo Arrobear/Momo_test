@@ -65,7 +65,7 @@ for _name in ("_dl_lib_dir", "_entry", "_candidate"):
         del globals()[_name]
 
 API_KEY = "sk-c0af31d9322254a8e4e2472f49d4c0e68f157c17c796e9aaffaa797f93104296"
-BASE_URL = "https://www.yunshucode.com"
+BASE_URL = "https://www.yunshucode.com/v1"
 MODEL = "gpt-5.5"
 
 def make_client():

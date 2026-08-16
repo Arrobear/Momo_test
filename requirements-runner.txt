@@ -3,3 +3,4 @@ numpy>=1.23,<2.1
 openai>=1.0,<3
 psutil>=5.9
 PyYAML>=6.0
+uv>=0.12

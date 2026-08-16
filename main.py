@@ -11,8 +11,8 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--phase", choices=["algo", "test", "all"], default="all",
                       help="algo: algorithm only / test: test execution only / all: both")
-  parser.add_argument("--k", type=int, default=500,
-                      help="Number of test cases per API (K)")
+  parser.add_argument("--k", type=int, default=1,
+                      help="Number of generated test cases per static path")
   parser.add_argument("--test-mode", choices=["auto", "v1", "v2"], default="auto",
                       help="Explicit differential-test mode; auto keeps legacy baseline detection")
   args = parser.parse_args()
@@ -56,16 +56,9 @@ if __name__ == "__main__":
       generate_api_boundary(api_names)
       print("generate_api_boundary")
 
-      # 生成默认输入用于约束校验
-      generate_default_inputs(api_names)
-      print("generate_default_inputs")
-
-      # 根据boundary生成测试输入候选值
-      generate_api_input(api_names)
-      print("generate_api_input")
-
-      # 生成测试案例模板 (run_api 函数)
-      generate_test_cases(api_names)
+      # 直接根据源码、路径约束和边界生成完整、可修复的测试用例。
+      # 旧的逐参数候选值流程不再参与批处理主链。
+      generate_test_cases(api_names, k=args.k)
       print("generate_test_cases")
 
   if args.phase in ("test", "all"):

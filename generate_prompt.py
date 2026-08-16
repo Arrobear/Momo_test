@@ -815,3 +815,75 @@ def generate_prompt_8(api_name, key, value, api_boundarys ,api_doc, api_code):
         """
 
     return ori_prompt
+
+
+def generate_prompt_9(
+    api_name,
+    api_signature,
+    api_doc,
+    api_code,
+    conditions,
+    api_boundaries,
+    path_data,
+    sample_index,
+    required_python,
+):
+    """Generate one complete executable test for one static execution path."""
+    path_type = path_data.get("path_type", "return")
+    expected_status = "error" if path_type == "raise" else "success"
+    return f"""
+You are generating one path-specific differential test for a Python API.
+
+API name:
+{api_name}
+
+API signature:
+{api_signature}
+
+Target Python version:
+{required_python}
+
+API documentation:
+{api_doc}
+
+API source:
+{api_code}
+
+Parameter conditions:
+{conditions}
+
+Boundary information:
+{api_boundaries}
+
+Target static path:
+{path_data}
+
+This is sample {sample_index + 1} for this path.
+The expected target-call status is exactly: {expected_status}
+
+Create a complete Python function named `run_test_case` that takes no
+arguments. It must prepare every required object, instance, event loop,
+executor, temporary directory, or external file itself. The actual target API
+invocation MUST be made through the injected helper:
+
+    return momo_call(target_callable, *args, **kwargs)
+
+For a method, instantiate the receiver first and pass the bound method to
+`momo_call`. For file-based behavior, create the file inside the function.
+Do not mock or replace the target implementation. Do not catch an exception
+raised by the target API. Do not use assertions as the test oracle. The
+function must execute the supplied path constraints, not merely call the API.
+All syntax and standard-library usage must be compatible with Python
+{required_python}.
+
+If the expected status is `success`, the target invocation must return
+normally. If it is `error`, the target invocation itself must raise because of
+the target path. Setup failures, import failures, syntax errors, missing files,
+and failures after the target call are invalid tests.
+
+Return only one valid JSON object:
+{{
+  "code": "complete Python source defining run_test_case",
+  "summary": "short description of the concrete path inputs"
+}}
+"""

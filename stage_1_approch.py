@@ -576,18 +576,48 @@ def generate_api_input(api_names):
 #------------------------------------
 # 生成测试案例model
 #------------------------------------
-def generate_test_cases(api_names):
+def _extract_path_test_case_payload(outputs_text):
+    payload = extract_clean_json(outputs_text) if outputs_text else None
+    if isinstance(payload, dict) and isinstance(payload.get("code"), str):
+        return {
+            "code": payload["code"].strip(),
+            "summary": str(payload.get("summary", "")).strip(),
+        }
+
+    if isinstance(outputs_text, str):
+        code_match = re.search(
+            r"```(?:python)?\s*(.*?)```",
+            outputs_text,
+            re.DOTALL | re.IGNORECASE,
+        )
+        candidate = (
+            code_match.group(1).strip()
+            if code_match
+            else outputs_text.strip()
+        )
+        if re.search(r"^\s*def\s+run_test_case\s*\(", candidate, re.MULTILINE):
+            return {"code": candidate, "summary": ""}
+    return None
+
+
+def generate_test_cases(api_names, k=1):
 
     client = make_client()
+    if k <= 0:
+        raise ValueError("k must be greater than zero")
+
+    documentation_dir = Path(root_path) / "documentation"
+    api_def_path = documentation_dir / "lib_api" / f"{lib_name}_APIdef.txt"
 
     # 读取 API 定义
-    with open(f"../documentation/lib_api/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
+    with open(api_def_path, 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
-    api_names = read_file(f"../documentation/lib_api/{lib_name}_APIdef.txt")
+    api_names = read_file(api_def_path)
 
     j = 0
-    path = f"{root_path}/documentation/test_cases/{lib_name}_case_{j}.json"
+    path = str(documentation_dir / "test_cases" / f"{lib_name}_case_{j}.json")
+    required_python = os.environ.get("MOMO_REQUIRED_PYTHON", "unknown")
 
     for i in range(len(api_names)):
         api_name = api_names[i]
@@ -595,27 +625,118 @@ def generate_test_cases(api_names):
         api_def = api_defs[i]
 
         api_doc = get_doc(function_name)
-        prompt_6 = generate_prompt_6(api_name, api_def, api_doc)
-
-        outputs_text = call_llm_with_retry(
-            client, MODEL,
-            messages=[
-                {"role": "system", "content": "You are a specialized AI assistant for generating API test inputs and test cases."},
-                {"role": "user", "content": prompt_6},
-            ],
-            temperature=0.0,
-            top_p=1.0,
-            seed=42
+        api_code = read_json_api(
+            api_name=api_name,
+            file_path=documentation_dir / "api_src_code",
+            read_mode="src_code",
+        ) or {}
+        conditions = read_json_api(
+            api_name=api_name,
+            file_path=documentation_dir / "conditions",
+            read_mode="conditions",
+        ) or {}
+        api_boundaries = read_json_api(
+            api_name=api_name,
+            file_path=documentation_dir / "arg_boundary",
+            read_mode="boundary",
+        ) or []
+        arg_spaces = read_json_api(
+            api_name=api_name,
+            file_path=documentation_dir / "arg_space",
+            read_mode="arg_space",
         )
+        if not isinstance(arg_spaces, list) or not arg_spaces:
+            arg_spaces = [{
+                "id": f"{api_name}_P1",
+                "conjuncts": [],
+                "path_type": "return",
+                "src": [],
+            }]
 
-        case = outputs_text
+        path_cases = []
+        for path_index, path_data in enumerate(arg_spaces):
+            if not isinstance(path_data, dict):
+                continue
+            path_id = str(path_data.get("id") or f"{api_name}_P{path_index + 1}")
+            path_type = str(path_data.get("path_type", "return"))
+            expected_status = "error" if path_type == "raise" else "success"
+
+            for sample_index in range(k):
+                prompt = generate_prompt_9(
+                    api_name=api_name,
+                    api_signature=api_def,
+                    api_doc=api_doc,
+                    api_code=api_code,
+                    conditions=conditions,
+                    api_boundaries=api_boundaries,
+                    path_data=path_data,
+                    sample_index=sample_index,
+                    required_python=required_python,
+                )
+                outputs_text = call_llm_with_retry(
+                    client,
+                    MODEL,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Generate executable path-specific Python tests. "
+                                "Output JSON only."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.0,
+                    top_p=1.0,
+                    seed=42 + sample_index,
+                )
+                payload = _extract_path_test_case_payload(outputs_text)
+                if payload is None:
+                    payload = {
+                        "code": (
+                            "def run_test_case():\n"
+                            "    raise RuntimeError("
+                            "'initial LLM output did not contain a runnable test')"
+                        ),
+                        "summary": "Initial generation could not be parsed.",
+                    }
+
+                path_cases.append({
+                    "schema_version": 2,
+                    "case_id": f"{path_id}::case_{sample_index + 1}",
+                    "api_name": api_name,
+                    "api_signature": api_def,
+                    "required_python": required_python,
+                    "api_documentation": api_doc,
+                    "api_source": api_code,
+                    "parameter_conditions": conditions,
+                    "boundary_context": api_boundaries,
+                    "path_id": path_id,
+                    "path_type": path_type,
+                    "path_constraints": path_data.get("conjuncts", []),
+                    "path_source": path_data.get("src", []),
+                    "expected_status": expected_status,
+                    "code": payload["code"],
+                    "summary": payload["summary"],
+                    "revision": 0,
+                    "validated": False,
+                    "validation_history": [],
+                })
 
         if is_file_too_large(path, max_size_mb=1000):
             j += 1
-            path = f"{root_path}/documentation/test_cases/{lib_name}_case_{j}.json"
+            path = str(
+                documentation_dir
+                / "test_cases"
+                / f"{lib_name}_case_{j}.json"
+            )
 
-        save_api_inputs(api_name, case, path)
-        print(f"已完成 {api_name} 的API测试案例生成, 进度 {i + 1}/{len(api_names)}")
+        save_api_inputs(api_name, path_cases, path)
+        print(
+            f"已完成 {api_name} 的路径测试案例生成: "
+            f"{len(arg_spaces)} 条路径 x {k}, "
+            f"进度 {i + 1}/{len(api_names)}"
+        )
 
 # api_names = read_file(f"../documentation/{lib_name}_APIdef.txt")
 # generate_test_cases(api_names)
@@ -626,52 +747,93 @@ def _extract_run_api_code(case_text):
     """从 LLM 输出中提取 run_api 的 Python 代码，兼容多种格式"""
     if case_text is None:
         return None
+    if isinstance(case_text, dict):
+        for value in case_text.values():
+            code = _extract_run_api_code(value)
+            if code and re.search(r"^\s*def\s+run_api\s*\(", code, re.MULTILINE):
+                return code
+        return None
+    if isinstance(case_text, list):
+        for value in case_text:
+            code = _extract_run_api_code(value)
+            if code:
+                return code
+        return None
+    if not isinstance(case_text, str):
+        return None
     # 尝试提取 markdown 代码块
-    code_match = re.search(r'```python\n(.*?)\n```', case_text, re.DOTALL)
+    code_match = re.search(r'```(?:python)?\s*(.*?)```', case_text, re.DOTALL | re.IGNORECASE)
     if code_match:
-        return code_match.group(1)
-    # 尝试提取不带 python 标记的代码块
-    code_match = re.search(r'```\n(.*?)\n```', case_text, re.DOTALL)
-    if code_match:
-        return code_match.group(1)
+        candidate = code_match.group(1).strip()
+        if re.search(r"^\s*def\s+run_api\s*\(", candidate, re.MULTILINE):
+            return candidate
     # 如果文本以 def 开头，直接使用
     stripped = case_text.strip()
-    if stripped.startswith("def "):
+    if re.search(r"^def\s+run_api\s*\(", stripped):
         return stripped
+    return None
+
+
+def _resolve_api_callable(api_name):
+    """Resolve an API by importing the longest module prefix."""
+    parts = api_name.split(".")
+    for module_end in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:module_end])
+        try:
+            target = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        try:
+            for attribute in parts[module_end:]:
+                target = getattr(target, attribute)
+        except AttributeError:
+            continue
+        if callable(target):
+            return target
     return None
 
 
 def _load_run_api(api_name):
     """从 test_cases 加载 run_api 函数，返回 callable 或 None"""
     case = read_json_api(api_name=api_name, file_path=f"../documentation/test_cases/", read_mode="case")
-    if case is None:
-        return None
     code_str = _extract_run_api_code(case)
-    if code_str is None:
-        return None
-    try:
-        exec_globals = dict(globals())
-        # Dataset API names may include repository-layout prefixes such as
-        # "lib.ansible...". Import the longest valid module path and expose
-        # its root package so generated code can resolve the exact API name.
-        api_parts = api_name.split(".")
-        for end in range(len(api_parts) - 1, 0, -1):
-            try:
-                importlib.import_module(".".join(api_parts[:end]))
-                exec_globals[api_parts[0]] = importlib.import_module(api_parts[0])
-                break
-            except ImportError:
-                continue
+    if code_str is not None:
         try:
-            lib_mod = importlib.import_module(lib_name)
-            exec_globals[lib_name] = lib_mod
-        except ImportError:
-            print(f"[警告] 无法导入库 {lib_name}，run_api 可能无法正常执行")
-        exec(code_str, exec_globals)
-        return exec_globals.get("run_api")
-    except Exception as e:
-        print(f"解析 {api_name} 的 case 代码失败: {e}")
+            exec_globals = dict(globals())
+            # Dataset API names may include repository-layout prefixes such as
+            # "lib.ansible...". Import the longest valid module path and expose
+            # its root package so generated code can resolve the exact API name.
+            api_parts = api_name.split(".")
+            for end in range(len(api_parts) - 1, 0, -1):
+                try:
+                    importlib.import_module(".".join(api_parts[:end]))
+                    exec_globals[api_parts[0]] = importlib.import_module(api_parts[0])
+                    break
+                except ImportError:
+                    continue
+            try:
+                lib_mod = importlib.import_module(lib_name)
+                exec_globals[lib_name] = lib_mod
+            except ImportError:
+                pass
+            exec(code_str, exec_globals)
+            generated = exec_globals.get("run_api")
+            if callable(generated):
+                return generated
+        except Exception as e:
+            print(f"解析 {api_name} 的 case 代码失败: {e}")
+
+    target = _resolve_api_callable(api_name)
+    if target is None:
+        print(f"[错误] 无法解析 {api_name} 的生成模板或真实 callable")
         return None
+
+    print(f"[模板回退] {api_name} 使用真实 callable 直接执行")
+
+    def run_api(*args, **kwargs):
+        return target(*args, **kwargs)
+
+    return run_api
 
 
 _valid_params_cache = {}

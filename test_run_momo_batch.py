@@ -2,6 +2,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import json
+import os
+import platform
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +16,9 @@ if str(MOMO_DIR) not in sys.path:
 import run_momo_batch as batch
 import source_resolver
 import stage_1_approch
+import test_case_refiner
+import test_environment
+import test_executor
 
 
 class ParseDatasetTests(unittest.TestCase):
@@ -65,6 +71,64 @@ class ArtifactLifecycleTests(unittest.TestCase):
             self.assertFalse((target_dir / "demo_inputs_12.json").exists())
             self.assertFalse((target_dir / "demo_default_inputs_3.json").exists())
             self.assertTrue((target_dir / "other_inputs_0.json").exists())
+
+    def test_baseline_summary_detects_framework_only_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            baseline = Path(tmp) / "demo_v1_baseline.json"
+            baseline.write_text(
+                '{"demo.api": [{"函数运行状态": "error", '
+                '"函数返回结果": "run_api 函数加载失败"}]}',
+                encoding="utf-8",
+            )
+            summary = batch.summarize_baseline([baseline])
+
+        self.assertEqual(summary["cases"], 1)
+        self.assertEqual(summary["framework_load_failures"], 1)
+
+    def test_path_case_bundle_does_not_require_legacy_flat_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            test_case_dir = root / "documentation" / "test_cases"
+            input_dir = root / "documentation" / "api_input"
+            test_case_dir.mkdir(parents=True)
+            input_dir.mkdir(parents=True)
+            path_case = {
+                "schema_version": 2,
+                "case_id": "demo.add_P1::case_1",
+                "code": "def run_test_case():\n    pass\n",
+            }
+            (test_case_dir / "demo_case_0.json").write_text(
+                json.dumps({"demo.add": [path_case]}),
+                encoding="utf-8",
+            )
+            record = {
+                "bug_id": 1,
+                "python_version": "3.8.3",
+                "bug_version": "bug",
+                "fix_version": "fix",
+                "bug_api": ["demo.add(left, right)"],
+            }
+
+            with mock.patch.object(batch, "ROOT", root):
+                bundle = batch.prepare_test_bundle(
+                    root / "run",
+                    "demo",
+                    record,
+                )
+
+            bundled_cases = json.loads(
+                (bundle / "test_cases.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                bundled_cases["demo.add"][0]["case_id"],
+                "demo.add_P1::case_1",
+            )
+            self.assertEqual(
+                json.loads(
+                    (bundle / "inputs.json").read_text(encoding="utf-8")
+                ),
+                {},
+            )
 
 
 class WorktreeIsolationTests(unittest.TestCase):
@@ -149,6 +213,422 @@ class DifferentialModeTests(unittest.TestCase):
                 stage_1_approch.run_test_cases(K=3, mode="v2")
                 run_v2.assert_called_once()
                 run_v1.assert_not_called()
+
+
+class RunApiFallbackTests(unittest.TestCase):
+    def test_load_run_api_falls_back_to_real_callable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            module_path = Path(tmp) / "demo_target.py"
+            module_path.write_text(
+                "def add(left, right):\n"
+                "    return left + right\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, tmp)
+            try:
+                with mock.patch.object(
+                    stage_1_approch, "read_json_api", return_value=None
+                ):
+                    run_api = stage_1_approch._load_run_api("demo_target.add")
+                self.assertIsNotNone(run_api)
+                self.assertEqual(run_api(left=2, right=3), 5)
+            finally:
+                sys.path.remove(tmp)
+                sys.modules.pop("demo_target", None)
+
+
+class StrictEnvironmentTests(unittest.TestCase):
+    def test_python_version_must_include_exact_patch(self):
+        with self.assertRaises(test_environment.TestEnvironmentError):
+            test_environment.normalize_python_version("3.8")
+
+    def test_wrong_python_version_is_rejected(self):
+        with self.assertRaises(test_environment.TestEnvironmentError):
+            test_environment.assert_exact_python(sys.executable, "0.0.1")
+
+    def test_minimal_executor_replays_same_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            bundle = root / "bundle"
+            results = root / "results"
+            target.mkdir()
+            bundle.mkdir()
+            (target / "demo_target.py").write_text(
+                "def add(left, right):\n"
+                "    return left + right\n",
+                encoding="utf-8",
+            )
+            (bundle / "record.json").write_text(
+                json.dumps(
+                    {
+                        "lib_name": "demo_target",
+                        "api_names": ["demo_target.add"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (bundle / "inputs.json").write_text(
+                json.dumps(
+                    {
+                        "demo_target.add": {
+                            "left": {"type": "literal", "values": [1, 2]},
+                            "right": {"type": "literal", "values": [3, 4]},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (bundle / "test_cases.json").write_text("{}", encoding="utf-8")
+            env = dict(os.environ)
+            env["PYTHONPATH"] = str(target)
+            version = platform.python_version()
+            executor = MOMO_DIR / "test_executor.py"
+            for mode in ("v1", "v2"):
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(executor),
+                        "--mode",
+                        mode,
+                        "--bundle",
+                        str(bundle),
+                        "--results",
+                        str(results),
+                        "--expected-python",
+                        version,
+                        "--k",
+                        "3",
+                    ],
+                    env=env,
+                    check=True,
+                )
+
+            baseline = json.loads(
+                (results / "v1_baseline.json").read_text(encoding="utf-8")
+            )
+            differences = json.loads(
+                (results / "diff_report.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(len(baseline["demo_target.add"]), 3)
+            self.assertEqual(differences, [])
+
+
+class PathCaseGenerationTests(unittest.TestCase):
+    def test_generates_k_complete_cases_for_every_static_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            api_dir = root / "documentation" / "lib_api"
+            api_dir.mkdir(parents=True)
+            (api_dir / "demo_APIdef.txt").write_text(
+                "demo.add(left, right)\n",
+                encoding="utf-8",
+            )
+            paths = [
+                {
+                    "id": "demo.add_P1",
+                    "conjuncts": ["left >= 0"],
+                    "path_type": "return",
+                    "src": ["python"],
+                },
+                {
+                    "id": "demo.add_P2",
+                    "conjuncts": ["left < 0"],
+                    "path_type": "raise",
+                    "src": ["python"],
+                },
+            ]
+
+            def read_artifact(api_name, file_path, read_mode):
+                return {
+                    "src_code": {"python": {"code": "def add(): pass"}},
+                    "conditions": {"Parameter type": {"left": "int"}},
+                    "boundary": [],
+                    "arg_space": paths,
+                }[read_mode]
+
+            generated = json.dumps(
+                {
+                    "code": (
+                        "def run_test_case():\n"
+                        "    import demo\n"
+                        "    return momo_call(demo.add, 1, 2)\n"
+                    ),
+                    "summary": "fixed integers",
+                }
+            )
+            with mock.patch.object(stage_1_approch, "root_path", str(root)), \
+                    mock.patch.object(stage_1_approch, "lib_name", "demo"), \
+                    mock.patch.object(
+                        stage_1_approch, "make_client", return_value=object()
+                    ), \
+                    mock.patch.object(
+                        stage_1_approch, "get_doc", return_value="demo doc"
+                    ), \
+                    mock.patch.object(
+                        stage_1_approch,
+                        "read_json_api",
+                        side_effect=read_artifact,
+                    ), \
+                    mock.patch.object(
+                        stage_1_approch,
+                        "call_llm_with_retry",
+                        return_value=generated,
+                    ), \
+                    mock.patch.dict(
+                        os.environ,
+                        {"MOMO_REQUIRED_PYTHON": "3.8.3"},
+                    ):
+                stage_1_approch.generate_test_cases(["demo.add"], k=2)
+
+            cases = json.loads(
+                (
+                    root
+                    / "documentation"
+                    / "test_cases"
+                    / "demo_case_0.json"
+                ).read_text(encoding="utf-8")
+            )["demo.add"]
+            self.assertEqual(len(cases), 4)
+            self.assertEqual(
+                [case["expected_status"] for case in cases],
+                ["success", "success", "error", "error"],
+            )
+            self.assertEqual(
+                {case["required_python"] for case in cases},
+                {"3.8.3"},
+            )
+            self.assertEqual(
+                len({case["case_id"] for case in cases}),
+                4,
+            )
+
+
+class PathCaseFeedbackTests(unittest.TestCase):
+    def test_invalid_setup_is_repaired_validated_and_replayed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            bundle = root / "bundle"
+            results = root / "results"
+            target.mkdir()
+            bundle.mkdir()
+            (target / "demo_target.py").write_text(
+                "def add(left, right):\n"
+                "    return left + right\n",
+                encoding="utf-8",
+            )
+            record = {
+                "lib_name": "demo_target",
+                "api_names": ["demo_target.add"],
+            }
+            initial_code = (
+                "def run_test_case():\n"
+                "    return open('missing-input.txt').read()\n"
+            )
+            repaired_code = (
+                "def run_test_case():\n"
+                "    import demo_target\n"
+                "    return momo_call(demo_target.add, 2, 3)\n"
+            )
+            cases = {
+                "demo_target.add": [
+                    {
+                        "schema_version": 2,
+                        "case_id": "demo_target.add_P1::case_1",
+                        "api_name": "demo_target.add",
+                        "api_signature": "demo_target.add(left, right)",
+                        "api_documentation": "",
+                        "api_source": {},
+                        "parameter_conditions": {},
+                        "boundary_context": [],
+                        "path_id": "demo_target.add_P1",
+                        "path_type": "return",
+                        "path_constraints": [],
+                        "expected_status": "success",
+                        "code": initial_code,
+                        "summary": "",
+                        "revision": 0,
+                        "validated": False,
+                        "validation_history": [],
+                    }
+                ]
+            }
+            (bundle / "record.json").write_text(
+                json.dumps(record), encoding="utf-8"
+            )
+            (bundle / "inputs.json").write_text("{}", encoding="utf-8")
+            (bundle / "test_cases.json").write_text(
+                json.dumps(cases), encoding="utf-8"
+            )
+
+            sys.path.insert(0, str(target))
+            try:
+                test_executor.run_probe(bundle, results, timeout=2)
+                attempts = json.loads(
+                    (results / "v1_attempts.json").read_text(encoding="utf-8")
+                )
+                first = attempts["demo_target.add"][0]
+                self.assertEqual(first["函数运行状态"], "harness_error")
+                self.assertFalse(first["target_invoked"])
+
+                repair_response = json.dumps(
+                    {
+                        "valid": False,
+                        "reason": "setup failed before target invocation",
+                        "repaired_code": repaired_code,
+                        "summary": "add two integers",
+                    }
+                )
+                with mock.patch.object(
+                    test_case_refiner,
+                    "call_llm_with_retry",
+                    return_value=repair_response,
+                ):
+                    status = test_case_refiner.refine_cases(
+                        bundle,
+                        results / "v1_attempts.json",
+                        round_number=1,
+                        client=object(),
+                    )
+                self.assertEqual(status["pending"], 1)
+                self.assertEqual(status["repaired"], 1)
+
+                test_executor.run_probe(bundle, results, timeout=2)
+                attempts = json.loads(
+                    (results / "v1_attempts.json").read_text(encoding="utf-8")
+                )
+                second = attempts["demo_target.add"][0]
+                self.assertEqual(second["函数运行状态"], "success")
+                self.assertTrue(second["target_invoked"])
+                self.assertTrue(second["target_matches_api"])
+                self.assertEqual(second["target_call_count"], 1)
+                self.assertEqual(second["函数返回结果"], 5)
+
+                valid_response = json.dumps(
+                    {
+                        "valid": True,
+                        "reason": "target return path executed successfully",
+                        "repaired_code": None,
+                        "summary": "add two integers",
+                    }
+                )
+                with mock.patch.object(
+                    test_case_refiner,
+                    "call_llm_with_retry",
+                    return_value=valid_response,
+                ):
+                    status = test_case_refiner.refine_cases(
+                        bundle,
+                        results / "v1_attempts.json",
+                        round_number=2,
+                        client=object(),
+                    )
+                self.assertEqual(status["pending"], 0)
+
+                test_executor.run_v1(bundle, results, count=1, timeout=2)
+                baseline = json.loads(
+                    (results / "v1_baseline.json").read_text(encoding="utf-8")
+                )
+                baseline_case = baseline["demo_target.add"][0]
+                self.assertEqual(
+                    baseline_case["test_case_code"],
+                    repaired_code.strip(),
+                )
+                self.assertEqual(baseline_case["函数返回结果"], 5)
+                self.assertEqual(baseline_case["revision"], 1)
+
+                test_executor.run_v2(bundle, results, timeout=2)
+                differences = json.loads(
+                    (results / "diff_report.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(differences, [])
+
+                target_module = sys.modules["demo_target"]
+                original_add = target_module.add
+                target_module.add = lambda left, right: left + right + 1
+                try:
+                    test_executor.run_v2(bundle, results, timeout=2)
+                    differences = json.loads(
+                        (results / "diff_report.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertEqual(len(differences), 1)
+                    self.assertEqual(
+                        differences[0]["case_id"],
+                        "demo_target.add_P1::case_1",
+                    )
+                    self.assertEqual(
+                        differences[0]["v2_target_call_count"], 1
+                    )
+                    self.assertTrue(
+                        differences[0]["v2_target_matches_api"]
+                    )
+                finally:
+                    target_module.add = original_add
+            finally:
+                sys.path.remove(str(target))
+                sys.modules.pop("demo_target", None)
+
+    def test_raise_path_requires_exception_from_requested_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            (target / "demo_raise.py").write_text(
+                "def reject(value):\n"
+                "    if value < 0:\n"
+                "        raise ValueError('negative value')\n"
+                "    return value\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(target))
+            try:
+                case_data = {
+                    "case_id": "demo_raise.reject_P1::case_1",
+                    "summary": "negative value",
+                    "expected_status": "error",
+                    "code": (
+                        "def run_test_case():\n"
+                        "    import demo_raise\n"
+                        "    return momo_call(demo_raise.reject, -1)\n"
+                    ),
+                }
+                observation = test_executor.execute_path_case(
+                    "demo_raise.reject",
+                    "demo_raise",
+                    case_data,
+                    timeout=2,
+                )
+                self.assertEqual(observation["函数运行状态"], "error")
+                self.assertEqual(observation["execution_phase"], "target_error")
+                self.assertTrue(observation["target_matches_api"])
+                self.assertEqual(
+                    test_case_refiner.automatic_issues(
+                        case_data, observation
+                    ),
+                    [],
+                )
+
+                wrong_target = dict(case_data)
+                wrong_target["code"] = (
+                    "def run_test_case():\n"
+                    "    return momo_call(len, [])\n"
+                )
+                observation = test_executor.execute_path_case(
+                    "demo_raise.reject",
+                    "demo_raise",
+                    wrong_target,
+                    timeout=2,
+                )
+                issues = test_case_refiner.automatic_issues(
+                    wrong_target, observation
+                )
+                self.assertTrue(
+                    any("other than the requested API" in item for item in issues)
+                )
+            finally:
+                sys.path.remove(str(target))
+                sys.modules.pop("demo_raise", None)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,14 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
+from test_environment import (
+    DEFAULT_INDEX_URL,
+    StrictTestEnvironment,
+    TestEnvironmentError,
+    normalize_python_version,
+    prepare_requirements,
+)
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DATABASE_DIR = ROOT / "documentation" / "database"
@@ -36,8 +44,9 @@ LIB_GITNAME = "black"
 LIB_NAME = "black"
 START = 0
 END = 1
-DEFAULT_K = 10
-BASE_PYTHON = Path(sys.executable).resolve()
+DEFAULT_K = 1
+DEFAULT_MAX_REPAIR_ROUNDS = 8
+BASE_PYTHON = Path(os.path.abspath(sys.executable))
 
 # Disabled by default because both options mutate the selected Python environment.
 INSTALL_DEPENDENCIES = False
@@ -148,6 +157,7 @@ def make_base_env():
 def make_runtime_env(repo_dir, lib_name, lib_gitname, joern_project):
     python_paths = [
         str(repo_dir),
+        str(repo_dir / "src"),
         str(repo_dir / "lib"),
         str(MOMO_DIR),
     ]
@@ -248,6 +258,132 @@ def parse_lib_file(path):
         )
 
     return records
+
+
+def parse_shell_metadata(path):
+    data = {}
+    path = Path(path)
+    if not path.exists():
+        return data
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.isidentifier():
+            data[key] = value.strip().strip("\"'")
+    return data
+
+
+def bugsinpy_record_metadata(lib_gitname, record):
+    bug_dir = BUGSINPY_DIR / lib_gitname / "bugs" / str(record["bug_id"])
+    bug_info = parse_shell_metadata(bug_dir / "bug.info")
+    required_version = normalize_python_version(record["python_version"])
+    info_version = bug_info.get("python_version")
+    if info_version and normalize_python_version(info_version) != required_version:
+        raise TestEnvironmentError(
+            "LIB_FILE python_version=%s differs from bug.info python_version=%s"
+            % (required_version, info_version)
+        )
+    return {
+        "bug_dir": bug_dir,
+        "required_python": required_version,
+        "pythonpath": bug_info.get("pythonpath", ""),
+        "test_file": bug_info.get("test_file", ""),
+        "requirements": bug_dir / "requirements.txt",
+        "setup": bug_dir / "setup.sh",
+        "run_test": bug_dir / "run_test.sh",
+    }
+
+
+def _merge_json_files(directory, pattern):
+    merged = {}
+    for path in sorted(Path(directory).glob(pattern)):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("invalid JSON artifact %s: %s" % (path, error))
+        if isinstance(data, dict):
+            merged.update(data)
+    return merged
+
+
+def prepare_test_bundle(run_dir, lib_name, record):
+    bundle_dir = Path(run_dir) / "bundle"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    api_names = []
+    for definition in record["bug_api"]:
+        api_names.append(definition.split("(", 1)[0].strip())
+
+    bundle_record = {
+        "lib_name": lib_name,
+        "bug_id": record["bug_id"],
+        "required_python": record["python_version"],
+        "bug_version": record["bug_version"],
+        "fix_version": record["fix_version"],
+        "api_names": api_names,
+    }
+    (bundle_dir / "record.json").write_text(
+        json.dumps(bundle_record, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    inputs = _merge_json_files(
+        ROOT / "documentation" / "api_input",
+        f"{lib_name}_inputs_*.json",
+    )
+    test_cases = _merge_json_files(
+        ROOT / "documentation" / "test_cases",
+        f"{lib_name}_case_*.json",
+    )
+    (bundle_dir / "inputs.json").write_text(
+        json.dumps(inputs, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (bundle_dir / "test_cases.json").write_text(
+        json.dumps(test_cases, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    path_case_apis = {
+        name
+        for name, api_cases in test_cases.items()
+        if isinstance(api_cases, list)
+        and api_cases
+        and isinstance(api_cases[0], dict)
+        and api_cases[0].get("schema_version") == 2
+    }
+    if path_case_apis:
+        missing_cases = [name for name in api_names if name not in path_case_apis]
+        if missing_cases:
+            raise RuntimeError(
+                "test bundle is missing path cases for: %s" % missing_cases
+            )
+    else:
+        missing_inputs = [name for name in api_names if name not in inputs]
+        if missing_inputs:
+            raise RuntimeError(
+                "test bundle is missing inputs for: %s" % missing_inputs
+            )
+    return bundle_dir
+
+
+def publish_executor_results(lib_name, executor_results):
+    executor_results = Path(executor_results)
+    mapping = {
+        "v1_baseline.json": f"{lib_name}_v1_baseline.json",
+        "diff_report.json": f"{lib_name}_diff_report.json",
+        "recursion_bugs.json": f"{lib_name}_recursion_bugs.json",
+        "timeout_bugs.json": f"{lib_name}_timeout_bugs.json",
+    }
+    for source_name, destination_name in mapping.items():
+        source = executor_results / source_name
+        if not source.exists():
+            if source_name in ("recursion_bugs.json", "timeout_bugs.json"):
+                source.write_text("{}", encoding="utf-8")
+            else:
+                raise RuntimeError("test executor did not produce %s" % source)
+        shutil.copy2(source, RESULTS_DIR / destination_name)
 
 
 def _is_prerelease_version(line):
@@ -362,7 +498,7 @@ def _has_runner_dependencies(python_executable):
 
 def ensure_runner_python(python_executable, bootstrap=True):
     if _has_runner_dependencies(python_executable):
-        return Path(python_executable).resolve()
+        return Path(os.path.abspath(str(python_executable)))
     if not bootstrap:
         raise RuntimeError(
             "运行解释器缺少核心依赖。请执行 "
@@ -403,7 +539,7 @@ def ensure_runner_python(python_executable, bootstrap=True):
     )
     if not _has_runner_dependencies(worker_python):
         raise RuntimeError(f"runner 依赖安装后仍不可导入: {worker_python}")
-    return worker_python.resolve()
+    return Path(os.path.abspath(str(worker_python)))
 
 
 def write_api_defs(lib_name, apis):
@@ -608,9 +744,73 @@ def cleanup_transient_results(lib_name):
     _unlink_patterns(RESULTS_DIR, patterns)
 
 
+def summarize_baseline(baseline_paths):
+    summary = {
+        "apis": 0,
+        "cases": 0,
+        "framework_load_failures": 0,
+        "harness_failures": 0,
+        "executed_cases": 0,
+        "statuses": {},
+    }
+    seen_apis = set()
+    for baseline_path in baseline_paths:
+        try:
+            data = json.loads(baseline_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"无法读取 V1 baseline: {baseline_path}: {error}")
+        if not isinstance(data, dict):
+            raise RuntimeError(f"V1 baseline 顶层不是对象: {baseline_path}")
+        for api_name, cases in data.items():
+            seen_apis.add(api_name)
+            if not isinstance(cases, list):
+                continue
+            for case in cases:
+                if not isinstance(case, dict):
+                    continue
+                summary["cases"] += 1
+                status = str(case.get("函数运行状态", "unknown"))
+                summary["statuses"][status] = summary["statuses"].get(status, 0) + 1
+                result = str(case.get("函数返回结果", ""))
+                if status == "error" and "run_api 函数加载失败" in result:
+                    summary["framework_load_failures"] += 1
+                if status == "harness_error":
+                    summary["harness_failures"] += 1
+                if status in {
+                    "success",
+                    "error",
+                    "timeout",
+                    "recursion_bug",
+                    "library_bug",
+                }:
+                    summary["executed_cases"] += 1
+    summary["apis"] = len(seen_apis)
+    return summary
+
+
 def move_results(lib_name, bug_id, record, metadata):
     target_dir = RESULTS_DIR / lib_name / f"{lib_name}_{bug_id}"
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    baseline_sources = sorted(RESULTS_DIR.glob(f"{lib_name}_v1_baseline*.json"))
+    if not baseline_sources:
+        raise RuntimeError(f"记录 {bug_id} 未生成 V1 baseline，不能视为执行成功。")
+    baseline_summary = summarize_baseline(baseline_sources)
+    if baseline_summary["cases"] == 0:
+        raise RuntimeError(f"记录 {bug_id} 的 V1 baseline 没有任何测试用例。")
+    if (
+        baseline_summary["framework_load_failures"]
+        + baseline_summary["harness_failures"]
+        == baseline_summary["cases"]
+    ):
+        raise RuntimeError(
+            f"记录 {bug_id} 的全部 {baseline_summary['cases']} 个用例"
+            "均为测试框架错误，拒绝标记成功。"
+        )
+    if baseline_summary["executed_cases"] == 0:
+        raise RuntimeError(
+            f"记录 {bug_id} 没有任何用例实际进入目标 API，拒绝标记成功。"
+        )
 
     for pattern in RESULT_PATTERNS:
         for old_path in target_dir.glob(pattern.format(lib=lib_name)):
@@ -630,13 +830,11 @@ def move_results(lib_name, bug_id, record, metadata):
             moved.append(destination.name)
             print(f"Moved {source} -> {destination}")
 
-    baseline_prefix = f"{lib_name}_v1_baseline"
-    if not any(name.startswith(baseline_prefix) for name in moved):
-        raise RuntimeError(f"记录 {bug_id} 未生成 V1 baseline，不能视为执行成功。")
-
     failure_path = target_dir / "failure.json"
     if failure_path.exists():
         failure_path.unlink()
+    metadata = dict(metadata)
+    metadata["baseline_summary"] = baseline_summary
     manifest = {
         "status": "success",
         "record": record,
@@ -682,17 +880,54 @@ def process_record(record, repo_dir, options):
     bug_hash = record["bug_version"]
     fix_hash = record["fix_version"]
     project_name = f"{options.lib_name}_{re.sub(r'[^A-Za-z0-9_.-]', '_', bug_hash)}"
+    environment_metadata = bugsinpy_record_metadata(options.lib_gitname, record)
+    required_python = environment_metadata["required_python"]
+    run_dir = RUNTIME_DIR / "runs" / options.lib_name / str(bug_id)
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    executor_results = run_dir / "results"
+    normalized_requirements = run_dir / "environment" / "requirements.txt"
+    requirements_metadata = prepare_requirements(
+        environment_metadata["requirements"],
+        normalized_requirements,
+    )
+    completed = False
+    repair_rounds_used = 0
 
     print("\n" + "=" * 80)
     print(json.dumps(record, ensure_ascii=False, indent=2))
+    print("Strict test Python: %s" % required_python)
     cleanup_intermediate_files(options.lib_name)
     cleanup_transient_results(options.lib_name)
 
-    if options.install_dependencies:
-        install_requirements(bug_id, options.lib_gitname, options.python)
-
     try:
         write_api_defs(options.lib_name, record["bug_api"])
+        print("\n--- create strict Bug/Fix test environments ---")
+        bug_test_environment = StrictTestEnvironment(
+            required_python,
+            run_dir / "envs" / "bug",
+            options.python,
+            provider=options.test_env_provider,
+            explicit_python=options.test_python,
+            index_url=options.index_url,
+        ).create()
+        fix_test_environment = StrictTestEnvironment(
+            required_python,
+            run_dir / "envs" / "fix",
+            options.python,
+            provider=options.test_env_provider,
+            explicit_python=options.test_python,
+            index_url=options.index_url,
+        ).create()
+        bug_test_environment.install_requirements(
+            normalized_requirements,
+            requirements_metadata,
+        )
+        fix_test_environment.install_requirements(
+            normalized_requirements,
+            requirements_metadata,
+        )
 
         with managed_worktree(
             repo_dir,
@@ -706,8 +941,7 @@ def process_record(record, repo_dir, options):
                 options.lib_gitname,
                 project_name,
             )
-            if options.install_target_package:
-                install_target_package(bug_repo, bug_env, options.python)
+            bug_env["MOMO_REQUIRED_PYTHON"] = required_python
 
             if should_use_joern(options.joern, options.lib_name, record["bug_api"]):
                 print("\n--- Joern importCode ---")
@@ -726,26 +960,113 @@ def process_record(record, repo_dir, options):
             print("\n--- main.py --phase algo (bug version) ---")
             run_python(
                 "main.py",
-                args=["--phase", "algo"],
+                args=["--phase", "algo", "--k", str(options.k)],
                 cwd=MOMO_DIR,
                 env=bug_env,
                 python_executable=options.python,
             )
 
-            print("\n--- main.py --phase test --test-mode v1 (bug version) ---")
-            run_python(
-                "main.py",
-                args=[
-                    "--phase",
-                    "test",
-                    "--test-mode",
+            bundle_dir = prepare_test_bundle(
+                run_dir,
+                options.lib_name,
+                record,
+            )
+
+            bug_test_environment.run_setup(
+                environment_metadata["setup"],
+                bug_repo,
+                environment_metadata["pythonpath"],
+            )
+            bug_test_environment.install_target(bug_repo)
+            bug_test_env = bug_test_environment.runtime_env(
+                bug_repo,
+                environment_metadata["pythonpath"],
+            )
+            attempts_path = executor_results / "v1_attempts.json"
+            repair_status_path = run_dir / "repair_status.json"
+            pending_cases = None
+            for repair_round in range(1, options.max_repair_rounds + 1):
+                repair_rounds_used = repair_round
+                print(
+                    "\n--- path test probe and LLM repair "
+                    f"(round {repair_round}/{options.max_repair_rounds}) ---"
+                )
+                run(
+                    [
+                        str(bug_test_environment.python),
+                        str(MOMO_DIR / "test_executor.py"),
+                        "--mode",
+                        "probe",
+                        "--bundle",
+                        str(bundle_dir),
+                        "--results",
+                        str(executor_results),
+                        "--expected-python",
+                        required_python,
+                        "--timeout",
+                        str(options.case_timeout),
+                    ],
+                    cwd=bug_repo,
+                    env=bug_test_env,
+                )
+                run_python(
+                    "test_case_refiner.py",
+                    args=[
+                        "--bundle",
+                        str(bundle_dir),
+                        "--attempts",
+                        str(attempts_path),
+                        "--round",
+                        str(repair_round),
+                        "--status",
+                        str(repair_status_path),
+                    ],
+                    cwd=MOMO_DIR,
+                    env=bug_env,
+                    python_executable=options.python,
+                )
+                repair_status = json.loads(
+                    repair_status_path.read_text(encoding="utf-8")
+                )
+                pending_cases = int(repair_status.get("pending", 0))
+                total_cases = int(repair_status.get("total", 0))
+                if total_cases == 0:
+                    raise RuntimeError(
+                        "algorithm did not generate any path test cases"
+                    )
+                print(
+                    "Path cases validated: "
+                    f"{total_cases - pending_cases}/{total_cases}"
+                )
+                if pending_cases == 0:
+                    break
+
+            if pending_cases:
+                raise RuntimeError(
+                    f"{pending_cases} path test cases remained invalid after "
+                    f"{options.max_repair_rounds} repair rounds"
+                )
+
+            print("\n--- materialize validated V1 baseline (bug version) ---")
+            run(
+                [
+                    str(bug_test_environment.python),
+                    str(MOMO_DIR / "test_executor.py"),
+                    "--mode",
                     "v1",
+                    "--bundle",
+                    str(bundle_dir),
+                    "--results",
+                    str(executor_results),
+                    "--expected-python",
+                    required_python,
                     "--k",
                     str(options.k),
+                    "--timeout",
+                    str(options.case_timeout),
                 ],
-                cwd=MOMO_DIR,
-                env=bug_env,
-                python_executable=options.python,
+                cwd=bug_repo,
+                env=bug_test_env,
             )
 
         with managed_worktree(
@@ -754,36 +1075,58 @@ def process_record(record, repo_dir, options):
             f"{options.lib_name}-{bug_id}-fix",
             keep=options.keep_worktrees,
         ) as fix_repo:
-            fix_env = make_runtime_env(
+            fix_test_environment.run_setup(
+                environment_metadata["setup"],
                 fix_repo,
-                options.lib_name,
-                options.lib_gitname,
-                project_name,
+                environment_metadata["pythonpath"],
             )
-            if options.install_target_package:
-                install_target_package(fix_repo, fix_env, options.python)
-
-            print("\n--- entrance.py --test-mode v2 (fix version) ---")
-            run_python(
-                "entrance.py",
-                args=["--test-mode", "v2"],
-                cwd=MOMO_DIR,
-                env=fix_env,
-                python_executable=options.python,
+            fix_test_environment.install_target(fix_repo)
+            fix_test_env = fix_test_environment.runtime_env(
+                fix_repo,
+                environment_metadata["pythonpath"],
+            )
+            print("\n--- test_executor.py --mode v2 (fix version) ---")
+            run(
+                [
+                    str(fix_test_environment.python),
+                    str(MOMO_DIR / "test_executor.py"),
+                    "--mode",
+                    "v2",
+                    "--bundle",
+                    str(bundle_dir),
+                    "--results",
+                    str(executor_results),
+                    "--expected-python",
+                    required_python,
+                    "--timeout",
+                    str(options.case_timeout),
+                ],
+                cwd=fix_repo,
+                env=fix_test_env,
             )
 
+        publish_executor_results(options.lib_name, executor_results)
         metadata = {
             "controller_python": str(BASE_PYTHON),
-            "worker_python": str(options.python),
-            "requested_python_version": record["python_version"],
+            "algorithm_python": str(options.python),
+            "requested_python_version": required_python,
+            "bug_test_environment": bug_test_environment.manifest(),
+            "fix_test_environment": fix_test_environment.manifest(),
             "joern_mode": options.joern,
-            "test_cases_per_api": options.k,
+            "test_cases_per_path": options.k,
+            "repair_rounds_used": repair_rounds_used,
+            "max_repair_rounds": options.max_repair_rounds,
+            "case_timeout": options.case_timeout,
+            "test_bundle": str(bundle_dir),
         }
         move_results(options.lib_name, bug_id, record, metadata)
+        completed = True
         return True
     finally:
         cleanup_intermediate_files(options.lib_name)
         cleanup_transient_results(options.lib_name)
+        if completed and not options.keep_test_envs:
+            shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def _validate_name(value, option_name):
@@ -804,6 +1147,8 @@ def validate_local_layout(options, lib_file, joern_required):
         raise FileNotFoundError("未找到 git 可执行文件。")
     if options.k <= 0:
         raise ValueError("--k 必须大于 0。")
+    if options.max_repair_rounds <= 0:
+        raise ValueError("--max-repair-rounds 必须大于 0。")
     _validate_name(options.lib_name, "--lib-name")
     _validate_name(options.lib_gitname, "--lib-gitname")
 
@@ -818,23 +1163,44 @@ def build_parser():
     parser.add_argument("--repo-url", default=None)
     parser.add_argument("--start", type=int, default=START)
     parser.add_argument("--end", type=int, default=END)
-    parser.add_argument("--k", type=int, default=DEFAULT_K)
-    parser.add_argument("--python", type=Path, default=BASE_PYTHON)
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=DEFAULT_K,
+        help="Number of complete test cases generated for each static path.",
+    )
+    parser.add_argument(
+        "--max-repair-rounds",
+        type=int,
+        default=DEFAULT_MAX_REPAIR_ROUNDS,
+        help="Maximum V1 execute-review-repair rounds before the record fails.",
+    )
+    parser.add_argument(
+        "--python",
+        type=Path,
+        default=BASE_PYTHON,
+        help="Python interpreter for the algorithm environment only.",
+    )
+    parser.add_argument(
+        "--test-env-provider",
+        choices=["auto", "local", "uv", "pyenv"],
+        default="auto",
+        help="Provider used to create exact-version Bug/Fix test environments.",
+    )
+    parser.add_argument(
+        "--test-python",
+        type=Path,
+        default=None,
+        help="Optional exact-version local Python used by the local provider.",
+    )
+    parser.add_argument("--index-url", default=DEFAULT_INDEX_URL)
+    parser.add_argument("--case-timeout", type=float, default=5.0)
+    parser.add_argument("--keep-test-envs", action="store_true")
     parser.add_argument(
         "--joern",
         choices=["auto", "always", "never"],
         default="auto",
         help="auto only enables Joern for currently supported native-code libraries.",
-    )
-    parser.add_argument(
-        "--install-dependencies",
-        action="store_true",
-        default=INSTALL_DEPENDENCIES,
-    )
-    parser.add_argument(
-        "--install-target-package",
-        action="store_true",
-        default=INSTALL_TARGET_PACKAGE,
     )
     parser.add_argument("--fail-fast", action="store_true")
     parser.add_argument("--keep-worktrees", action="store_true")
@@ -855,7 +1221,13 @@ def build_parser():
 
 def main(argv=None):
     options = build_parser().parse_args(argv)
-    options.python = options.python.expanduser().resolve()
+    options.python = Path(
+        os.path.abspath(str(options.python.expanduser()))
+    )
+    if options.test_python is not None:
+        options.test_python = Path(
+            os.path.abspath(str(options.test_python.expanduser()))
+        )
 
     lib_file = Path(options.lib_file)
     if not lib_file.is_absolute():
@@ -876,6 +1248,7 @@ def main(argv=None):
     for record in selected:
         verify_commit(repo_dir, record["bug_version"])
         verify_commit(repo_dir, record["fix_version"])
+        bugsinpy_record_metadata(options.lib_gitname, record)
 
     print(f"Loaded {len(records)} records from {lib_file}")
     print(f"Selected {len(selected)} records [{options.start}:{options.end}]")
