@@ -324,6 +324,16 @@ class PathCaseGenerationTests(unittest.TestCase):
                 "demo.add(left, right)\n",
                 encoding="utf-8",
             )
+            bug_dir = root / "bug"
+            bug_dir.mkdir()
+            (bug_dir / "bug_patch.txt").write_text(
+                "diff --git a/demo.py b/demo.py\n+handle failure\n",
+                encoding="utf-8",
+            )
+            (bug_dir / "run_test.sh").write_text(
+                "python -m unittest demo_test\n",
+                encoding="utf-8",
+            )
             paths = [
                 {
                     "id": "demo.add_P1",
@@ -377,7 +387,11 @@ class PathCaseGenerationTests(unittest.TestCase):
                     ), \
                     mock.patch.dict(
                         os.environ,
-                        {"MOMO_REQUIRED_PYTHON": "3.8.3"},
+                        {
+                            "MOMO_REQUIRED_PYTHON": "3.8.3",
+                            "MOMO_BUG_ID": "7",
+                            "MOMO_BUG_DIR": str(bug_dir),
+                        },
                     ):
                 stage_1_approch.generate_test_cases(["demo.add"], k=2)
 
@@ -402,9 +416,125 @@ class PathCaseGenerationTests(unittest.TestCase):
                 len({case["case_id"] for case in cases}),
                 4,
             )
+            self.assertIn("handle failure", cases[0]["bug_context"]["bug_patch"])
+            self.assertIn("demo_test", cases[0]["bug_context"]["run_test"])
 
 
 class PathCaseFeedbackTests(unittest.TestCase):
+    def test_path_case_restores_process_platform_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            (target / "demo_state.py").write_text(
+                "def identity(value):\n"
+                "    return value\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(target))
+            original_platform = sys.platform
+            try:
+                observation = test_executor.execute_path_case(
+                    "demo_state.identity",
+                    "demo_state",
+                    {
+                        "case_id": "demo_state.identity_P1::case_1",
+                        "summary": "platform mutation",
+                        "code": (
+                            "def run_test_case():\n"
+                            "    import sys\n"
+                            "    import demo_state\n"
+                            "    sys.platform = 'win32'\n"
+                            "    return momo_call(demo_state.identity, 7)\n"
+                        ),
+                    },
+                    timeout=2,
+                )
+                self.assertEqual(observation["函数运行状态"], "success")
+                self.assertGreater(
+                    observation["target_trace"]["executed_line_count"],
+                    0,
+                )
+                self.assertEqual(sys.platform, original_platform)
+            finally:
+                sys.path.remove(str(target))
+                sys.modules.pop("demo_state", None)
+
+    def test_success_with_none_result_is_not_a_valid_oracle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            (target / "demo_none.py").write_text(
+                "def touch(value):\n"
+                "    value.append('done')\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(target))
+            try:
+                case_data = {
+                    "case_id": "demo_none.touch_P1::case_1",
+                    "summary": "returns none",
+                    "expected_status": "success",
+                    "code": (
+                        "def run_test_case():\n"
+                        "    import demo_none\n"
+                        "    values = []\n"
+                        "    return momo_call(demo_none.touch, values)\n"
+                    ),
+                }
+                observation = test_executor.execute_path_case(
+                    "demo_none.touch",
+                    "demo_none",
+                    case_data,
+                    timeout=2,
+                )
+                self.assertEqual(observation["函数运行状态"], "success")
+                self.assertIsNone(observation["函数返回结果"])
+                issues = test_case_refiner.automatic_issues(
+                    case_data, observation
+                )
+                self.assertTrue(
+                    any("structured oracle" in issue for issue in issues)
+                )
+            finally:
+                sys.path.remove(str(target))
+                sys.modules.pop("demo_none", None)
+
+    def test_bug_patch_target_error_can_be_validated_by_model(self):
+        case_data = {
+            "expected_status": "success",
+            "bug_context": {
+                "bug_patch": "diff --git a/demo.py b/demo.py\n+except OSError"
+            },
+        }
+        observation = {
+            "函数运行状态": "error",
+            "execution_phase": "target_error",
+            "target_invoked": True,
+            "target_call_count": 1,
+            "target_matches_api": True,
+            "target_trace": {"executed_line_count": 3},
+            "target_completed": False,
+            "函数返回结果": "OSError: simulated failure",
+        }
+        self.assertEqual(
+            test_case_refiner.automatic_issues(case_data, observation),
+            [],
+        )
+        self.assertTrue(
+            test_executor.observation_matches_validated_case(
+                case_data, observation
+            )
+        )
+
+        no_patch = dict(case_data)
+        no_patch["bug_context"] = {}
+        self.assertTrue(
+            any(
+                "expected success" in issue
+                for issue in test_case_refiner.automatic_issues(
+                    no_patch, observation
+                )
+            )
+        )
+
     def test_invalid_setup_is_repaired_validated_and_replayed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -570,6 +700,70 @@ class PathCaseFeedbackTests(unittest.TestCase):
             finally:
                 sys.path.remove(str(target))
                 sys.modules.pop("demo_target", None)
+
+    def test_async_target_must_be_driven_after_direct_momo_call(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            (target / "demo_async.py").write_text(
+                "async def add(left, right):\n"
+                "    return left + right\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(target))
+            try:
+                unawaited = {
+                    "case_id": "demo_async.add_P1::case_1",
+                    "summary": "unawaited async call",
+                    "expected_status": "success",
+                    "code": (
+                        "def run_test_case():\n"
+                        "    import demo_async\n"
+                        "    return momo_call(demo_async.add, 2, 3)\n"
+                    ),
+                }
+                observation = test_executor.execute_path_case(
+                    "demo_async.add",
+                    "demo_async",
+                    unawaited,
+                    timeout=2,
+                )
+                self.assertEqual(
+                    observation["函数运行状态"], "harness_error"
+                )
+                self.assertEqual(
+                    observation["execution_phase"], "target_not_awaited"
+                )
+
+                awaited = dict(unawaited)
+                awaited["code"] = (
+                    "def run_test_case():\n"
+                    "    import asyncio\n"
+                    "    import demo_async\n"
+                    "    loop = asyncio.new_event_loop()\n"
+                    "    try:\n"
+                    "        awaitable = momo_call(demo_async.add, 2, 3)\n"
+                    "        return loop.run_until_complete(awaitable)\n"
+                    "    finally:\n"
+                    "        loop.close()\n"
+                )
+                observation = test_executor.execute_path_case(
+                    "demo_async.add",
+                    "demo_async",
+                    awaited,
+                    timeout=2,
+                )
+                self.assertEqual(observation["函数运行状态"], "success")
+                self.assertEqual(observation["函数返回结果"], 5)
+                self.assertTrue(observation["target_matches_api"])
+                self.assertEqual(
+                    test_case_refiner.automatic_issues(
+                        awaited, observation
+                    ),
+                    [],
+                )
+            finally:
+                sys.path.remove(str(target))
+                sys.modules.pop("demo_async", None)
 
     def test_raise_path_requires_exception_from_requested_api(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -45,7 +45,7 @@ LIB_NAME = "black"
 START = 0
 END = 1
 DEFAULT_K = 1
-DEFAULT_MAX_REPAIR_ROUNDS = 8
+DEFAULT_MAX_REPAIR_ROUNDS = 5
 BASE_PYTHON = Path(os.path.abspath(sys.executable))
 
 # Disabled by default because both options mutate the selected Python environment.
@@ -942,6 +942,8 @@ def process_record(record, repo_dir, options):
                 project_name,
             )
             bug_env["MOMO_REQUIRED_PYTHON"] = required_python
+            bug_env["MOMO_BUG_ID"] = str(bug_id)
+            bug_env["MOMO_BUG_DIR"] = str(environment_metadata["bug_dir"])
 
             if should_use_joern(options.joern, options.lib_name, record["bug_api"]):
                 print("\n--- Joern importCode ---")

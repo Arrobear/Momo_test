@@ -600,6 +600,41 @@ def _extract_path_test_case_payload(outputs_text):
     return None
 
 
+def _read_text_if_exists(path, max_chars=12000):
+    path = Path(path)
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return text[:max_chars]
+
+
+def _load_bugsinpy_context(documentation_dir):
+    bug_id = os.environ.get("MOMO_BUG_ID", "").strip()
+    bug_dir = os.environ.get("MOMO_BUG_DIR", "").strip()
+    if bug_dir:
+        bug_path = Path(bug_dir)
+    elif bug_id:
+        bug_path = (
+            Path(documentation_dir)
+            / "database"
+            / "BugsInPy"
+            / "projects"
+            / lib_gitname
+            / "bugs"
+            / bug_id
+        )
+    else:
+        return {}
+
+    return {
+        "bug_id": bug_id,
+        "bug_dir": str(bug_path),
+        "bug_patch": _read_text_if_exists(bug_path / "bug_patch.txt"),
+        "run_test": _read_text_if_exists(bug_path / "run_test.sh"),
+        "bug_info": _read_text_if_exists(bug_path / "bug.info"),
+    }
+
+
 def generate_test_cases(api_names, k=1):
 
     client = make_client()
@@ -618,6 +653,7 @@ def generate_test_cases(api_names, k=1):
     j = 0
     path = str(documentation_dir / "test_cases" / f"{lib_name}_case_{j}.json")
     required_python = os.environ.get("MOMO_REQUIRED_PYTHON", "unknown")
+    bug_context = _load_bugsinpy_context(documentation_dir)
 
     for i in range(len(api_names)):
         api_name = api_names[i]
@@ -669,6 +705,7 @@ def generate_test_cases(api_names, k=1):
                     api_code=api_code,
                     conditions=conditions,
                     api_boundaries=api_boundaries,
+                    bug_context=bug_context,
                     path_data=path_data,
                     sample_index=sample_index,
                     required_python=required_python,
@@ -711,6 +748,7 @@ def generate_test_cases(api_names, k=1):
                     "api_source": api_code,
                     "parameter_conditions": conditions,
                     "boundary_context": api_boundaries,
+                    "bug_context": bug_context,
                     "path_id": path_id,
                     "path_type": path_type,
                     "path_constraints": path_data.get("conjuncts", []),

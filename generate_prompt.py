@@ -824,6 +824,7 @@ def generate_prompt_9(
     api_code,
     conditions,
     api_boundaries,
+    bug_context,
     path_data,
     sample_index,
     required_python,
@@ -855,6 +856,9 @@ Parameter conditions:
 Boundary information:
 {api_boundaries}
 
+BugsInPy bug context:
+{bug_context}
+
 Target static path:
 {path_data}
 
@@ -868,6 +872,16 @@ invocation MUST be made through the injected helper:
 
     return momo_call(target_callable, *args, **kwargs)
 
+If the target API is async or returns an awaitable, call the requested API
+itself through `momo_call`, then drive that returned awaitable with the event
+loop. Use this exact shape:
+
+    awaitable = momo_call(target_async_callable, *args, **kwargs)
+    return loop.run_until_complete(awaitable)
+
+Never pass a synchronous or asynchronous wrapper around the requested API to
+`momo_call`.
+
 For a method, instantiate the receiver first and pass the bound method to
 `momo_call`. For file-based behavior, create the file inside the function.
 Do not mock or replace the target implementation. Do not catch an exception
@@ -875,6 +889,14 @@ raised by the target API. Do not use assertions as the test oracle. The
 function must execute the supplied path constraints, not merely call the API.
 All syntax and standard-library usage must be compatible with Python
 {required_python}.
+
+Use the BugsInPy patch context to design a differential oracle. If the patch
+shows a dependency failure, exception fallback, changed assignment, cache write,
+or side-effect condition, the case should inject or observe that condition.
+The function should return a structured dictionary/list/string/number oracle
+that captures observable behavior after the target call, such as file contents,
+cache entries, report events, exception type/message, or changed object state.
+Do not return only None for a success path.
 
 If the expected status is `success`, the target invocation must return
 normally. If it is `error`, the target invocation itself must raise because of

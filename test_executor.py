@@ -7,6 +7,7 @@ environment before this script is launched.
 
 import argparse
 import ast
+import asyncio
 import importlib
 import inspect
 import json
@@ -338,7 +339,50 @@ def target_matches_api(target, expected_target):
     return False
 
 
-def execute_path_case(api_name, lib_name, case_data, timeout):
+def target_source_info(target):
+    if target is None:
+        return None
+    function = getattr(target, "__func__", target)
+    try:
+        source_file = inspect.getsourcefile(function)
+        source_lines, start_line = inspect.getsourcelines(function)
+    except (OSError, TypeError):
+        return None
+    if source_file is None:
+        return None
+    source_map = {}
+    for offset, line in enumerate(source_lines):
+        line_no = start_line + offset
+        source_map[line_no] = line.rstrip("\n")
+    return {
+        "file": os.path.abspath(source_file),
+        "start_line": start_line,
+        "end_line": start_line + len(source_lines) - 1,
+        "source_map": source_map,
+    }
+
+
+def public_trace(trace_state):
+    source_map = trace_state.get("source_map", {})
+    executed = sorted(set(trace_state.get("executed_lines", [])))
+    executed_source = [
+        {
+            "line": line_no,
+            "code": source_map.get(line_no, ""),
+        }
+        for line_no in executed
+    ]
+    return {
+        "file": trace_state.get("file"),
+        "start_line": trace_state.get("start_line"),
+        "end_line": trace_state.get("end_line"),
+        "executed_lines": executed,
+        "executed_line_count": len(executed),
+        "executed_source": executed_source,
+    }
+
+
+def _execute_path_case_inner(api_name, lib_name, case_data, timeout):
     code = case_data.get("code", "")
     entry = {
         "case_id": case_data.get("case_id"),
@@ -360,6 +404,14 @@ def execute_path_case(api_name, lib_name, case_data, timeout):
 
     namespace = build_eval_globals(api_name, lib_name)
     expected_target = resolve_api_callable(api_name)
+    trace_info = target_source_info(expected_target)
+    trace_state = {
+        "file": trace_info.get("file") if trace_info else None,
+        "start_line": trace_info.get("start_line") if trace_info else None,
+        "end_line": trace_info.get("end_line") if trace_info else None,
+        "source_map": trace_info.get("source_map", {}) if trace_info else {},
+        "executed_lines": [],
+    }
     call_state = {
         "invoked": False,
         "call_count": 0,
@@ -403,9 +455,23 @@ def execute_path_case(api_name, lib_name, case_data, timeout):
         entry["函数返回结果"] = "generated code did not define run_test_case()"
         return entry
 
+    def trace_calls(frame, event, arg):
+        if event != "line" or trace_state["file"] is None:
+            return trace_calls
+        filename = os.path.abspath(frame.f_code.co_filename)
+        if filename != trace_state["file"]:
+            return trace_calls
+        line_no = frame.f_lineno
+        if trace_state["start_line"] <= line_no <= trace_state["end_line"]:
+            trace_state["executed_lines"].append(line_no)
+        return trace_calls
+
     entry["execution_phase"] = "setup"
+    previous_trace = sys.gettrace()
+    sys.settrace(trace_calls)
     try:
         output = run_with_timeout(run_test_case, timeout, {})
+        entry["target_trace"] = public_trace(trace_state)
         entry["target_invoked"] = call_state["invoked"]
         entry["target_call_count"] = call_state["call_count"]
         entry["target_completed"] = call_state["completed"]
@@ -415,10 +481,23 @@ def execute_path_case(api_name, lib_name, case_data, timeout):
             entry["函数运行状态"] = "harness_error"
             entry["函数返回结果"] = "run_test_case returned without momo_call()"
             return entry
+        if inspect.isawaitable(output):
+            close_awaitable = getattr(output, "close", None)
+            if callable(close_awaitable):
+                close_awaitable()
+            entry["target_completed"] = False
+            entry["execution_phase"] = "target_not_awaited"
+            entry["函数运行状态"] = "harness_error"
+            entry["函数返回结果"] = (
+                "target API returned an awaitable that run_test_case "
+                "did not execute"
+            )
+            return entry
         entry["execution_phase"] = "target"
         entry["函数运行状态"] = "success"
         entry["函数返回结果"] = safe_serialize(output)
     except CaseTimeout as error:
+        entry["target_trace"] = public_trace(trace_state)
         entry["target_invoked"] = call_state["invoked"]
         entry["target_call_count"] = call_state["call_count"]
         entry["target_completed"] = call_state["completed"]
@@ -431,6 +510,7 @@ def execute_path_case(api_name, lib_name, case_data, timeout):
         entry["函数返回结果"] = "[TIMEOUT] %s" % error
         entry["traceback"] = traceback.format_exc()
     except RecursionError as error:
+        entry["target_trace"] = public_trace(trace_state)
         entry["target_invoked"] = call_state["invoked"]
         entry["target_call_count"] = call_state["call_count"]
         entry["target_completed"] = call_state["completed"]
@@ -443,6 +523,7 @@ def execute_path_case(api_name, lib_name, case_data, timeout):
         entry["函数返回结果"] = "[RECURSION_BUG] %s" % error
         entry["traceback"] = traceback.format_exc()
     except BaseException as error:
+        entry["target_trace"] = public_trace(trace_state)
         entry["target_invoked"] = call_state["invoked"]
         entry["target_call_count"] = call_state["call_count"]
         entry["target_completed"] = call_state["completed"]
@@ -466,7 +547,51 @@ def execute_path_case(api_name, lib_name, case_data, timeout):
         except Exception:
             entry["函数返回结果"] = "%s: <str failed>" % type(error).__name__
         entry["traceback"] = traceback.format_exc()
+    finally:
+        sys.settrace(previous_trace)
+        if "target_trace" not in entry:
+            entry["target_trace"] = public_trace(trace_state)
     return entry
+
+
+def execute_path_case(api_name, lib_name, case_data, timeout):
+    original_platform = sys.platform
+    original_cwd = os.getcwd()
+    original_environ = dict(os.environ)
+    original_sys_path = list(sys.path)
+    try:
+        original_loop = asyncio.get_event_loop()
+    except RuntimeError:
+        original_loop = None
+
+    try:
+        return _execute_path_case_inner(
+            api_name,
+            lib_name,
+            case_data,
+            timeout,
+        )
+    finally:
+        sys.platform = original_platform
+        sys.path[:] = original_sys_path
+        os.environ.clear()
+        os.environ.update(original_environ)
+        try:
+            os.chdir(original_cwd)
+        except OSError:
+            pass
+        try:
+            current_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            current_loop = None
+        if (
+            current_loop is not None
+            and current_loop is not original_loop
+            and not current_loop.is_running()
+            and not current_loop.is_closed()
+        ):
+            current_loop.close()
+        asyncio.set_event_loop(original_loop)
 
 
 def run_probe(bundle, result_dir, timeout):
@@ -492,6 +617,69 @@ def run_probe(bundle, result_dir, timeout):
         if pending_cases:
             attempts[api_name] = pending_cases
     save_json(result_dir / "v1_attempts.json", attempts)
+
+
+def observation_matches_validated_case(case_data, observation):
+    if not observation.get("target_matches_api"):
+        return False
+    if observation.get("target_call_count") != 1:
+        return False
+    trace = observation.get("target_trace") or {}
+    bug_context = case_data.get("bug_context") or {}
+    bug_triggering_target_error = (
+        observation.get("函数运行状态") == "error"
+        and observation.get("execution_phase") == "target_error"
+        and observation.get("target_invoked")
+        and trace.get("executed_line_count")
+        and bool(str(bug_context.get("bug_patch") or "").strip())
+    )
+    expected = case_data.get("expected_status")
+    status = observation.get("函数运行状态")
+    if expected == "success":
+        return (
+            status == "success"
+            and observation.get("target_completed")
+            or bug_triggering_target_error
+        )
+    if expected == "error":
+        return (
+            status == "error"
+            and observation.get("execution_phase") == "target_error"
+        )
+    return False
+
+
+def replay_validated_path_cases(bundle, timeout):
+    record = load_json(bundle / "record.json", {})
+    cases_path = bundle / "test_cases.json"
+    cases = load_json(cases_path, {})
+    for api_name in record.get("api_names", []):
+        for case_data in cases.get(api_name, []):
+            if not case_data.get("validated"):
+                raise RuntimeError(
+                    "path case was not validated: %s"
+                    % case_data.get("case_id")
+                )
+            observation = execute_path_case(
+                api_name,
+                record["lib_name"],
+                case_data,
+                timeout,
+            )
+            if not observation_matches_validated_case(
+                case_data, observation
+            ):
+                raise RuntimeError(
+                    "validated path case was not reproducible: %s "
+                    "(status=%s phase=%s)"
+                    % (
+                        case_data.get("case_id"),
+                        observation.get("函数运行状态"),
+                        observation.get("execution_phase"),
+                    )
+                )
+            case_data["baseline_observation"] = observation
+    save_json(cases_path, cases)
 
 
 def materialize_path_baseline(bundle, result_dir):
@@ -613,6 +801,7 @@ def run_v1(bundle, result_dir, count, timeout):
     record = load_json(bundle / "record.json", {})
     cases = load_json(bundle / "test_cases.json", {})
     if has_path_cases(cases, record):
+        replay_validated_path_cases(bundle, timeout)
         materialize_path_baseline(bundle, result_dir)
     else:
         run_v1_legacy(bundle, result_dir, count, timeout)
@@ -627,7 +816,8 @@ def normalize_result(value):
         normalized,
     )
     normalized = re.sub(
-        r"/(?:private/)?var/folders/[^\s'\"<>]+/T/tmp[^\s/'\"<>]+",
+        r"/(?:private/)?var/folders/[^\s'\"<>]+/T/"
+        r"(?:tmp|black_|momo_black_)[^\s/'\"<>]+",
         "<TMPDIR>",
         normalized,
     )

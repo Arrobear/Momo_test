@@ -49,19 +49,38 @@ def automatic_issues(case_data, observation):
     expected = case_data.get("expected_status")
     status = observation.get("函数运行状态")
     phase = observation.get("execution_phase")
+    trace = observation.get("target_trace") or {}
+    bug_context = case_data.get("bug_context") or {}
+    bug_patch = str(bug_context.get("bug_patch") or "").strip()
+    bug_triggering_target_error = (
+        status == "error"
+        and phase == "target_error"
+        and observation.get("target_invoked")
+        and observation.get("target_matches_api")
+        and trace.get("executed_line_count")
+        and bool(bug_patch)
+    )
     if not observation.get("target_invoked"):
         issues.append("target API was never invoked through momo_call")
     elif not observation.get("target_matches_api"):
         issues.append("momo_call invoked a callable other than the requested API")
     if observation.get("target_call_count") != 1:
         issues.append("test case must invoke exactly one target API call")
+    if not trace.get("executed_line_count"):
+        issues.append("target source body was not executed under trace")
     if status in {"harness_error", "eval_failed", "timeout", "recursion_bug"}:
         issues.append("execution status %s is not a valid path oracle" % status)
     if expected == "success":
-        if status != "success":
+        if status != "success" and not bug_triggering_target_error:
             issues.append("return path expected success but observed %s" % status)
-        if not observation.get("target_completed"):
+        if not observation.get("target_completed") and not bug_triggering_target_error:
             issues.append("target call did not complete")
+        if status == "success" and observation.get("函数返回结果") is None:
+            issues.append(
+                "success path returned None; return a structured oracle "
+                "with observable side effects such as file contents, cache "
+                "state, report events, or injected exception status"
+            )
     elif expected == "error":
         if status != "error" or phase != "target_error":
             issues.append(
@@ -98,6 +117,9 @@ Parameter conditions:
 Boundary context:
 {boundary_context}
 
+BugsInPy bug context:
+{bug_context}
+
 Target path id:
 {path_id}
 
@@ -119,16 +141,38 @@ Deterministic validation issues:
 {issues}
 
 Decide whether this code genuinely and reproducibly executes the requested
-target path. An expected error is valid only when the target API itself raises
+target path. Do not judge validity from success status alone. Use
+`target_trace.executed_source` and the requested `path_constraints` to decide
+whether the target function body actually executed the intended branch/path.
+If the trace is empty or the executed lines do not support the requested path,
+the case is invalid even if the return status is "success".
+
+For success paths, returning None is not a useful differential oracle. The test
+must return a structured, JSON-serializable oracle derived from observable
+behavior after the target call: file contents, cache state, report events,
+exception class/message from an injected failure, or other side effects relevant
+to the path. An expected error is valid only when the target API itself raises
 from the requested path. Syntax/import/setup/missing-file/instantiation errors,
 timeouts, failures after the target call, and calls that never reach the target
 are invalid.
+
+Use the BugsInPy patch context and original run_test command when present.
+A case that covers only a generic path but does not exercise or observe the
+patched behavior is incomplete for regression detection.
 
 If invalid, provide a complete replacement `run_test_case()` implementation.
 It must create all files, objects, instances, loops, and executors it needs and
 must invoke the real API through:
 
     return momo_call(target_callable, *args, **kwargs)
+
+For an async target, do not wrap it. Pass the requested API directly to
+`momo_call`, then await the returned coroutine with the prepared event loop:
+
+    awaitable = momo_call(target_async_callable, *args, **kwargs)
+    return loop.run_until_complete(awaitable)
+
+Never pass a wrapper around the requested API to `momo_call`.
 
 Do not mock the target implementation, catch the target exception, or use an
 assertion as the oracle.
@@ -149,6 +193,7 @@ Return only JSON:
         api_source=case_data.get("api_source"),
         parameter_conditions=case_data.get("parameter_conditions"),
         boundary_context=case_data.get("boundary_context"),
+        bug_context=case_data.get("bug_context"),
         path_id=case_data.get("path_id"),
         path_constraints=case_data.get("path_constraints"),
         expected_status=case_data.get("expected_status"),
@@ -231,6 +276,9 @@ def refine_cases(bundle_dir, attempts_path, round_number, client=None):
                     "target_matches_api": observation.get(
                         "target_matches_api"
                     ),
+                    "target_trace_line_count": (
+                        observation.get("target_trace") or {}
+                    ).get("executed_line_count"),
                     "automatic_issues": issues,
                     "model_valid": review["valid"],
                     "model_reason": review["reason"],
