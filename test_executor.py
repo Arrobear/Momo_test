@@ -625,6 +625,14 @@ def observation_matches_validated_case(case_data, observation):
     if observation.get("target_call_count") != 1:
         return False
     trace = observation.get("target_trace") or {}
+    target_timeout = (
+        observation.get("函数运行状态") == "timeout"
+        and observation.get("execution_phase") == "target_timeout"
+        and observation.get("target_invoked")
+        and bool(trace.get("executed_line_count"))
+    )
+    if target_timeout:
+        return True
     bug_context = case_data.get("bug_context") or {}
     bug_triggering_target_error = (
         observation.get("函数运行状态") == "error"

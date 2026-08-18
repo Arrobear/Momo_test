@@ -130,6 +130,53 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 {},
             )
 
+    def test_prune_unvalidated_path_cases_keeps_validated_subset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "bundle"
+            bundle.mkdir()
+            cases = {
+                "demo.add": [
+                    {
+                        "schema_version": 2,
+                        "case_id": "demo.add_P1::case_1",
+                        "validated": True,
+                    },
+                    {
+                        "schema_version": 2,
+                        "case_id": "demo.add_P2::case_1",
+                        "validated": False,
+                    },
+                ],
+                "demo.sub": [
+                    {
+                        "schema_version": 2,
+                        "case_id": "demo.sub_P1::case_1",
+                        "validated": True,
+                    }
+                ],
+            }
+            (bundle / "test_cases.json").write_text(
+                json.dumps(cases), encoding="utf-8"
+            )
+
+            summary = batch.prune_unvalidated_path_cases(bundle)
+
+            self.assertEqual(summary["total"], 3)
+            self.assertEqual(summary["validated"], 2)
+            self.assertEqual(summary["pruned"], 1)
+            pruned_cases = json.loads(
+                (bundle / "test_cases.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                [case["case_id"] for case in pruned_cases["demo.add"]],
+                ["demo.add_P1::case_1"],
+            )
+            self.assertEqual(
+                summary["apis"]["demo.add"]["pruned_case_ids"],
+                ["demo.add_P2::case_1"],
+            )
+            self.assertTrue((bundle / "pruned_cases.json").exists())
+
 
 class WorktreeIsolationTests(unittest.TestCase):
     def test_managed_worktree_does_not_touch_dirty_primary_checkout(self):
@@ -534,6 +581,110 @@ class PathCaseFeedbackTests(unittest.TestCase):
                 )
             )
         )
+
+    def test_target_timeout_is_validated_without_llm_and_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            bundle = root / "bundle"
+            results = root / "results"
+            target.mkdir()
+            bundle.mkdir()
+            (target / "demo_timeout.py").write_text(
+                "def spin():\n"
+                "    while True:\n"
+                "        pass\n",
+                encoding="utf-8",
+            )
+            record = {
+                "lib_name": "demo_timeout",
+                "api_names": ["demo_timeout.spin"],
+            }
+            case_code = (
+                "def run_test_case():\n"
+                "    import demo_timeout\n"
+                "    return momo_call(demo_timeout.spin)\n"
+            )
+            cases = {
+                "demo_timeout.spin": [
+                    {
+                        "schema_version": 2,
+                        "case_id": "demo_timeout.spin_P1::case_1",
+                        "api_name": "demo_timeout.spin",
+                        "api_signature": "demo_timeout.spin()",
+                        "path_id": "demo_timeout.spin_P1",
+                        "path_type": "return",
+                        "path_constraints": [],
+                        "expected_status": "success",
+                        "code": case_code,
+                        "summary": "target timeout",
+                        "revision": 0,
+                        "validated": False,
+                        "validation_history": [],
+                    }
+                ]
+            }
+            (bundle / "record.json").write_text(
+                json.dumps(record), encoding="utf-8"
+            )
+            (bundle / "inputs.json").write_text("{}", encoding="utf-8")
+            (bundle / "test_cases.json").write_text(
+                json.dumps(cases), encoding="utf-8"
+            )
+
+            sys.path.insert(0, str(target))
+            try:
+                test_executor.run_probe(bundle, results, timeout=0.2)
+                attempts = json.loads(
+                    (results / "v1_attempts.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                observation = attempts["demo_timeout.spin"][0]
+                self.assertEqual(observation["函数运行状态"], "timeout")
+                self.assertEqual(
+                    observation["execution_phase"], "target_timeout"
+                )
+                self.assertEqual(
+                    test_case_refiner.automatic_issues(
+                        cases["demo_timeout.spin"][0], observation
+                    ),
+                    [],
+                )
+
+                with mock.patch.object(
+                    test_case_refiner, "call_llm_with_retry"
+                ) as call_llm:
+                    status = test_case_refiner.refine_cases(
+                        bundle,
+                        results / "v1_attempts.json",
+                        round_number=1,
+                        client=object(),
+                    )
+                call_llm.assert_not_called()
+                self.assertEqual(status["pending"], 0)
+                self.assertEqual(status["validated"], 1)
+
+                test_executor.run_v1(bundle, results, count=1, timeout=0.2)
+                baseline = json.loads(
+                    (results / "v1_baseline.json").read_text(encoding="utf-8")
+                )
+                baseline_case = baseline["demo_timeout.spin"][0]
+                self.assertEqual(baseline_case["函数运行状态"], "timeout")
+                self.assertEqual(
+                    baseline_case["execution_phase"], "target_timeout"
+                )
+                timeout_bugs = json.loads(
+                    (results / "timeout_bugs.json").read_text(encoding="utf-8")
+                )
+                self.assertIn("demo_timeout.spin", timeout_bugs)
+                self.assertEqual(
+                    timeout_bugs["demo_timeout.spin"][0]["case_index"],
+                    0,
+                )
+            finally:
+                sys.path.remove(str(target))
+                sys.modules.pop("demo_timeout", None)
 
     def test_invalid_setup_is_repaired_validated_and_replayed(self):
         with tempfile.TemporaryDirectory() as tmp:

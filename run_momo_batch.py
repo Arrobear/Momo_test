@@ -42,10 +42,10 @@ if not JOERN_EXE.exists():
 LIB_FILE = "black.txt"
 LIB_GITNAME = "black"
 LIB_NAME = "black"
-START = 0
-END = 1
+START = 13
+END = None
 DEFAULT_K = 1
-DEFAULT_MAX_REPAIR_ROUNDS = 5
+DEFAULT_MAX_REPAIR_ROUNDS = 8
 BASE_PYTHON = Path(os.path.abspath(sys.executable))
 
 # Disabled by default because both options mutate the selected Python environment.
@@ -366,6 +366,82 @@ def prepare_test_bundle(run_dir, lib_name, record):
                 "test bundle is missing inputs for: %s" % missing_inputs
             )
     return bundle_dir
+
+
+def prune_unvalidated_path_cases(bundle_dir):
+    bundle_dir = Path(bundle_dir)
+    cases_path = bundle_dir / "test_cases.json"
+    try:
+        cases = json.loads(cases_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            "invalid test_cases bundle %s: %s" % (cases_path, error)
+        )
+    if not isinstance(cases, dict):
+        raise RuntimeError(
+            "test_cases bundle top level is not an object: %s" % cases_path
+        )
+
+    summary = {
+        "total": 0,
+        "validated": 0,
+        "pruned": 0,
+        "apis": {},
+    }
+    for api_name, api_cases in list(cases.items()):
+        if not isinstance(api_cases, list):
+            continue
+
+        kept_cases = []
+        api_summary = {
+            "total": 0,
+            "validated": 0,
+            "pruned": 0,
+            "retained_case_ids": [],
+            "pruned_case_ids": [],
+        }
+        path_case_seen = False
+        for case_data in api_cases:
+            is_path_case = (
+                isinstance(case_data, dict) and case_data.get("schema_version") == 2
+            )
+            if not is_path_case:
+                kept_cases.append(case_data)
+                continue
+
+            path_case_seen = True
+            summary["total"] += 1
+            api_summary["total"] += 1
+            case_id = case_data.get("case_id")
+            if case_data.get("validated"):
+                kept_cases.append(case_data)
+                summary["validated"] += 1
+                api_summary["validated"] += 1
+                api_summary["retained_case_ids"].append(case_id)
+            else:
+                summary["pruned"] += 1
+                api_summary["pruned"] += 1
+                api_summary["pruned_case_ids"].append(case_id)
+
+        if path_case_seen:
+            cases[api_name] = [
+                case_data
+                for case_data in kept_cases
+                if isinstance(case_data, dict)
+                and case_data.get("schema_version") == 2
+                and case_data.get("validated")
+            ]
+            summary["apis"][api_name] = api_summary
+
+    cases_path.write_text(
+        json.dumps(cases, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (bundle_dir / "pruned_cases.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return summary
 
 
 def publish_executor_results(lib_name, executor_results):
@@ -894,6 +970,7 @@ def process_record(record, repo_dir, options):
     )
     completed = False
     repair_rounds_used = 0
+    pruning_summary = None
 
     print("\n" + "=" * 80)
     print(json.dumps(record, ensure_ascii=False, indent=2))
@@ -1043,10 +1120,17 @@ def process_record(record, repo_dir, options):
                 if pending_cases == 0:
                     break
 
-            if pending_cases:
+            pruning_summary = prune_unvalidated_path_cases(bundle_dir)
+            if pruning_summary["validated"] == 0:
                 raise RuntimeError(
-                    f"{pending_cases} path test cases remained invalid after "
+                    "no path test cases validated after "
                     f"{options.max_repair_rounds} repair rounds"
+                )
+            if pruning_summary["pruned"]:
+                print(
+                    "Discarded invalid path cases after repair budget: "
+                    f"{pruning_summary['pruned']}; continuing with "
+                    f"{pruning_summary['validated']} validated cases."
                 )
 
             print("\n--- materialize validated V1 baseline (bug version) ---")
@@ -1118,6 +1202,7 @@ def process_record(record, repo_dir, options):
             "test_cases_per_path": options.k,
             "repair_rounds_used": repair_rounds_used,
             "max_repair_rounds": options.max_repair_rounds,
+            "path_case_pruning": pruning_summary,
             "case_timeout": options.case_timeout,
             "test_bundle": str(bundle_dir),
         }
@@ -1164,7 +1249,12 @@ def build_parser():
     parser.add_argument("--lib-gitname", default=LIB_GITNAME)
     parser.add_argument("--repo-url", default=None)
     parser.add_argument("--start", type=int, default=START)
-    parser.add_argument("--end", type=int, default=END)
+    parser.add_argument(
+        "--end",
+        type=int,
+        default=END,
+        help="Exclusive record index. Omit to run through the end of the lib file.",
+    )
     parser.add_argument(
         "--k",
         type=int,

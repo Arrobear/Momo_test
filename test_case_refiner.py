@@ -44,6 +44,18 @@ def code_is_runnable(code):
     return has_entrypoint and has_target_call
 
 
+def is_target_timeout_observation(observation):
+    trace = observation.get("target_trace") or {}
+    return (
+        observation.get("函数运行状态") == "timeout"
+        and observation.get("execution_phase") == "target_timeout"
+        and observation.get("target_invoked")
+        and observation.get("target_matches_api")
+        and observation.get("target_call_count") == 1
+        and bool(trace.get("executed_line_count"))
+    )
+
+
 def automatic_issues(case_data, observation):
     issues = []
     expected = case_data.get("expected_status")
@@ -60,6 +72,7 @@ def automatic_issues(case_data, observation):
         and trace.get("executed_line_count")
         and bool(bug_patch)
     )
+    target_timeout = is_target_timeout_observation(observation)
     if not observation.get("target_invoked"):
         issues.append("target API was never invoked through momo_call")
     elif not observation.get("target_matches_api"):
@@ -68,6 +81,10 @@ def automatic_issues(case_data, observation):
         issues.append("test case must invoke exactly one target API call")
     if not trace.get("executed_line_count"):
         issues.append("target source body was not executed under trace")
+    if target_timeout:
+        if expected not in {"success", "error"}:
+            issues.append("unknown expected status: %s" % expected)
+        return issues
     if status in {"harness_error", "eval_failed", "timeout", "recursion_bug"}:
         issues.append("execution status %s is not a valid path oracle" % status)
     if expected == "success":
@@ -153,8 +170,10 @@ behavior after the target call: file contents, cache state, report events,
 exception class/message from an injected failure, or other side effects relevant
 to the path. An expected error is valid only when the target API itself raises
 from the requested path. Syntax/import/setup/missing-file/instantiation errors,
-timeouts, failures after the target call, and calls that never reach the target
-are invalid.
+setup timeouts, failures after the target call, and calls that never reach the
+target are invalid. A timeout after the requested target API was invoked and
+traced is a terminal V1 observation and should be recorded as a timeout bug
+candidate, not repaired.
 
 Use the BugsInPy patch context and original run_test command when present.
 A case that covers only a generic path but does not exercise or observe the
@@ -246,6 +265,35 @@ def refine_cases(bundle_dir, attempts_path, round_number, client=None):
                 raise RuntimeError("missing V1 observation for %s" % case_id)
 
             issues = automatic_issues(case_data, observation)
+            if is_target_timeout_observation(observation) and not issues:
+                case_data.setdefault("validation_history", []).append(
+                    {
+                        "round": round_number,
+                        "status": observation.get("函数运行状态"),
+                        "execution_phase": observation.get("execution_phase"),
+                        "target_invoked": observation.get("target_invoked"),
+                        "target_call_count": observation.get(
+                            "target_call_count"
+                        ),
+                        "target_matches_api": observation.get(
+                            "target_matches_api"
+                        ),
+                        "target_trace_line_count": (
+                            observation.get("target_trace") or {}
+                        ).get("executed_line_count"),
+                        "automatic_issues": issues,
+                        "model_valid": None,
+                        "model_reason": (
+                            "accepted automatically as target timeout"
+                        ),
+                    }
+                )
+                case_data["validated"] = True
+                case_data["validation_reason"] = (
+                    "target API timed out during V1 probe"
+                )
+                case_data["baseline_observation"] = observation
+                continue
             prompt = build_review_prompt(case_data, observation, issues)
             response = call_llm_with_retry(
                 client,
