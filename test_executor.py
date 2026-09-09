@@ -53,7 +53,28 @@ def assert_python_version(expected):
         )
 
 
+def runtime_api_name_candidates(api_name):
+    candidates = []
+    for prefix in ("lib.", "src."):
+        if api_name.startswith(prefix):
+            candidates.append(api_name[len(prefix):])
+    candidates.append(api_name)
+    result = []
+    for candidate in candidates:
+        if candidate not in result:
+            result.append(candidate)
+    return result
+
+
 def resolve_api_callable(api_name):
+    for candidate in runtime_api_name_candidates(api_name):
+        target = _resolve_api_callable(candidate)
+        if target is not None:
+            return target
+    return None
+
+
+def _resolve_api_callable(api_name):
     parts = api_name.split(".")
     for module_end in range(len(parts) - 1, 0, -1):
         try:
@@ -404,6 +425,7 @@ def _execute_path_case_inner(api_name, lib_name, case_data, timeout):
 
     namespace = build_eval_globals(api_name, lib_name)
     expected_target = resolve_api_callable(api_name)
+    namespace["target_callable"] = expected_target
     trace_info = target_source_info(expected_target)
     trace_state = {
         "file": trace_info.get("file") if trace_info else None,

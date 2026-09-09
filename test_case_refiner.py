@@ -3,10 +3,16 @@
 import argparse
 import ast
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from config import MODEL, make_client
-from stage_1_function import call_llm_with_retry, extract_clean_json
+from stage_1_function import (
+    call_llm_with_retry,
+    extract_clean_json,
+    get_llm_worker_count,
+)
 
 
 def load_json(path):
@@ -239,12 +245,48 @@ def parse_review(text):
     }
 
 
+_thread_local_llm = threading.local()
+
+
+def _thread_llm_client():
+    client = getattr(_thread_local_llm, "client", None)
+    if client is None:
+        client = make_client()
+        _thread_local_llm.client = client
+    return client
+
+
+def _review_case_with_llm(task, client=None):
+    prompt = build_review_prompt(
+        task["case_data"],
+        task["observation"],
+        task["issues"],
+    )
+    response = call_llm_with_retry(
+        client or _thread_llm_client(),
+        MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Validate path coverage and repair Python tests. "
+                    "Output JSON only."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.0,
+        top_p=1.0,
+        seed=42 + task["round_number"],
+    )
+    return task, parse_review(response)
+
+
 def refine_cases(bundle_dir, attempts_path, round_number, client=None):
     bundle_dir = Path(bundle_dir)
     cases_path = bundle_dir / "test_cases.json"
     cases = load_json(cases_path)
     attempts = load_json(attempts_path)
-    client = client or make_client()
     observations = {
         entry.get("case_id"): entry
         for api_attempts in attempts.values()
@@ -253,10 +295,11 @@ def refine_cases(bundle_dir, attempts_path, round_number, client=None):
     }
 
     repaired = 0
-    for api_name, api_cases in cases.items():
+    review_tasks = []
+    for api_order, (api_name, api_cases) in enumerate(cases.items()):
         if not isinstance(api_cases, list):
             continue
-        for case_data in api_cases:
+        for case_index, case_data in enumerate(api_cases):
             if not isinstance(case_data, dict) or case_data.get("validated"):
                 continue
             case_id = case_data.get("case_id")
@@ -294,60 +337,88 @@ def refine_cases(bundle_dir, attempts_path, round_number, client=None):
                 )
                 case_data["baseline_observation"] = observation
                 continue
-            prompt = build_review_prompt(case_data, observation, issues)
-            response = call_llm_with_retry(
-                client,
-                MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Validate path coverage and repair Python tests. "
-                            "Output JSON only."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.0,
-                top_p=1.0,
-                seed=42 + round_number,
-            )
-            review = parse_review(response)
-            accepted = review["valid"] and not issues
-            case_data.setdefault("validation_history", []).append(
+            review_tasks.append(
                 {
-                    "round": round_number,
-                    "status": observation.get("函数运行状态"),
-                    "execution_phase": observation.get("execution_phase"),
-                    "target_invoked": observation.get("target_invoked"),
-                    "target_call_count": observation.get("target_call_count"),
-                    "target_matches_api": observation.get(
-                        "target_matches_api"
-                    ),
-                    "target_trace_line_count": (
-                        observation.get("target_trace") or {}
-                    ).get("executed_line_count"),
-                    "automatic_issues": issues,
-                    "model_valid": review["valid"],
-                    "model_reason": review["reason"],
+                    "api_order": api_order,
+                    "api_name": api_name,
+                    "case_index": case_index,
+                    "case_data": case_data,
+                    "observation": observation,
+                    "issues": issues,
+                    "round_number": round_number,
                 }
             )
 
-            if accepted:
-                case_data["validated"] = True
-                case_data["validation_reason"] = review["reason"]
-                case_data["baseline_observation"] = observation
-                if review["summary"]:
-                    case_data["summary"] = review["summary"]
-                continue
+    llm_workers = get_llm_worker_count()
+    review_results = []
+    if review_tasks:
+        print(
+            "Parallel LLM review/repair tasks: "
+            f"{len(review_tasks)}, workers={llm_workers}"
+        )
+        if llm_workers == 1 or len(review_tasks) <= 1:
+            serial_client = client or make_client()
+            for task in review_tasks:
+                review_results.append(_review_case_with_llm(task, serial_client))
+                print(
+                    "LLM review/repair progress: "
+                    f"{len(review_results)}/{len(review_tasks)}"
+                )
+        else:
+            with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+                futures = [
+                    executor.submit(_review_case_with_llm, task)
+                    for task in review_tasks
+                ]
+                for future in as_completed(futures):
+                    review_results.append(future.result())
+                    print(
+                        "LLM review/repair progress: "
+                        f"{len(review_results)}/{len(review_tasks)}"
+                    )
 
-            repaired_code = review.get("repaired_code")
-            if code_is_runnable(repaired_code):
-                case_data["code"] = repaired_code.strip()
-                case_data["revision"] = int(case_data.get("revision", 0)) + 1
-                if review["summary"]:
-                    case_data["summary"] = review["summary"]
-                repaired += 1
+    for task, review in sorted(
+        review_results,
+        key=lambda item: (item[0]["api_order"], item[0]["case_index"]),
+    ):
+        case_data = task["case_data"]
+        observation = task["observation"]
+        issues = task["issues"]
+        accepted = review["valid"] and not issues
+        case_data.setdefault("validation_history", []).append(
+            {
+                "round": round_number,
+                "status": observation.get("函数运行状态"),
+                "execution_phase": observation.get("execution_phase"),
+                "target_invoked": observation.get("target_invoked"),
+                "target_call_count": observation.get("target_call_count"),
+                "target_matches_api": observation.get(
+                    "target_matches_api"
+                ),
+                "target_trace_line_count": (
+                    observation.get("target_trace") or {}
+                ).get("executed_line_count"),
+                "automatic_issues": issues,
+                "model_valid": review["valid"],
+                "model_reason": review["reason"],
+            }
+        )
+
+        if accepted:
+            case_data["validated"] = True
+            case_data["validation_reason"] = review["reason"]
+            case_data["baseline_observation"] = observation
+            if review["summary"]:
+                case_data["summary"] = review["summary"]
+            continue
+
+        repaired_code = review.get("repaired_code")
+        if code_is_runnable(repaired_code):
+            case_data["code"] = repaired_code.strip()
+            case_data["revision"] = int(case_data.get("revision", 0)) + 1
+            if review["summary"]:
+                case_data["summary"] = review["summary"]
+            repaired += 1
 
     save_json(cases_path, cases)
     all_cases = [

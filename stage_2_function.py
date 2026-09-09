@@ -22,6 +22,81 @@ TORCH_PATH = (
     else None
 )
 YAML_PATH = TORCH_PATH / "aten" / "src" / "ATen" / "native" / "native_functions.yaml" if TORCH_PATH else None
+DEFAULT_MAX_STATIC_PATHS_PER_API = 64
+
+
+def _get_max_static_paths_per_api(default=DEFAULT_MAX_STATIC_PATHS_PER_API):
+    raw_value = os.environ.get("MOMO_MAX_STATIC_PATHS_PER_API")
+    if raw_value is None:
+        return default
+    try:
+        return max(1, int(raw_value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _path_signature(path):
+    conjuncts = path.get("conjuncts", [])
+    return (
+        path.get("path_type", "return"),
+        tuple(conjuncts if isinstance(conjuncts, list) else []),
+    )
+
+
+def select_representative_paths(paths, api_name, max_paths=None):
+    max_paths = max_paths or _get_max_static_paths_per_api()
+    if not isinstance(paths, list):
+        return []
+
+    deduped = []
+    seen = set()
+    for path in paths:
+        if not isinstance(path, dict):
+            continue
+        signature = _path_signature(path)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        deduped.append(path)
+
+    if len(deduped) <= max_paths:
+        return deduped
+
+    buckets = {"raise": [], "return": [], "return_fun": [], "other": []}
+    for path in deduped:
+        path_type = path.get("path_type", "return")
+        bucket = buckets.get(path_type, buckets["other"])
+        bucket.append(path)
+
+    selected = []
+    selected_signatures = set()
+
+    def add_path(path):
+        signature = _path_signature(path)
+        if signature in selected_signatures:
+            return
+        if len(selected) >= max_paths:
+            return
+        selected_signatures.add(signature)
+        selected.append(path)
+
+    for bucket in buckets.values():
+        bucket.sort(key=lambda item: (item.get("complexity", 0), len(item.get("conjuncts", []))))
+        if bucket:
+            add_path(bucket[0])
+            add_path(bucket[-1])
+
+    for path in sorted(
+        deduped,
+        key=lambda item: (item.get("complexity", 0), len(item.get("conjuncts", []))),
+    ):
+        add_path(path)
+        if len(selected) >= max_paths:
+            break
+
+    for index, path in enumerate(selected, start=1):
+        path["id"] = f"{api_name}_{index}"
+    return selected
 
 
 def _make_local_runtime_env():
@@ -1135,8 +1210,11 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
             return "<complex_expr>"
 
     paths = []
+    max_paths = _get_max_static_paths_per_api()
 
     def append_path(guards: List[str], path_type: str, ret_value: Optional[ast.AST]):
+        if len(paths) >= max_paths:
+            return
         calls_cpp = False
         if path_type == "return_fun" and isinstance(ret_value, ast.Call):
             calls_cpp = True
@@ -1153,10 +1231,14 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
         })
 
     def exec_block(stmts: List[ast.stmt], guards_prefix: List[str]):
+        if len(paths) >= max_paths:
+            return
         guards = guards_prefix[:]
         i = 0
         n = len(stmts)
         while i < n:
+            if len(paths) >= max_paths:
+                return
             stmt = stmts[i]
 
             # If 分支（新增：继续执行剩余语句）
@@ -1195,7 +1277,7 @@ def enumerate_python_paths_core(api_name: str, api_data: dict):
         append_path(guards, "return", None)
 
     exec_block(func_node.body, [])
-    return paths
+    return select_representative_paths(paths, api_name, max_paths)
 
 # python层路径枚举函数
 def torch_enumerate_python_paths(json_path: str, api_name: str):
@@ -1751,6 +1833,8 @@ if __name__ == "__main__":
         ppaths = torch_enumerate_python_paths(f"../documentation/api_guards/{lib_name}_api_guards.json", api_name)
         cpaths = torch_enumerate_cpp_paths(api_name)
         merged_paths = merge_python_cpp_paths(ppaths, cpaths, api_name)
+        raw_path_count = len(merged_paths)
+        merged_paths = select_representative_paths(merged_paths, api_name)
 
         grouped_results[api_name] = grouped_results.get(api_name, [])
         grouped_results[api_name].extend(merged_paths)
@@ -1760,6 +1844,11 @@ if __name__ == "__main__":
         try:
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(grouped_results, f, indent=4, ensure_ascii=False)
+            if raw_path_count > len(merged_paths):
+                print(
+                    f"[路径裁剪] {api_name}: "
+                    f"{raw_path_count} -> {len(merged_paths)}"
+                )
             print(f"[💾 Saved] {api_name}: {len(merged_paths)} 条路径已写入。")
         except Exception as e:
             print(f"[❌ Save Error] 写入文件失败 ({api_name}): {e}")

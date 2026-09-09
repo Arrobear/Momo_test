@@ -18,6 +18,7 @@ from test_environment import (
     DEFAULT_INDEX_URL,
     StrictTestEnvironment,
     TestEnvironmentError,
+    assert_exact_python,
     normalize_python_version,
     prepare_requirements,
 )
@@ -39,14 +40,30 @@ if not JOERN_EXE.exists():
         "joern-cli.bat" if os.name == "nt" else "joern-cli"
     )
 
-LIB_FILE = "black.txt"
-LIB_GITNAME = "black"
-LIB_NAME = "black"
-START = 13
+LIB_FILE = "pandas.txt"
+LIB_GITNAME = "pandas"
+LIB_NAME = "pandas"
+START = 147
 END = None
+BUG_IDS = []
 DEFAULT_K = 1
 DEFAULT_MAX_REPAIR_ROUNDS = 8
 BASE_PYTHON = Path(os.path.abspath(sys.executable))
+DEFAULT_TEST_ENV_PROVIDER = "conda"
+DEFAULT_TEST_PYTHON = None
+DEFAULT_LLM_WORKERS = 4
+DEFAULT_MAX_PATHS_PER_BUG = 16
+DEFAULT_CONDA_ENV_ROOT = RUNTIME_DIR / "conda-envs"
+DEFAULT_CONDA_ENV_NAME_TEMPLATE = "momo-py{version}"
+
+
+def _default_conda_subdir():
+    if sys.platform != "darwin" or not hasattr(os, "uname"):
+        return None
+    return "osx-64" if os.uname().machine == "arm64" else None
+
+
+DEFAULT_CONDA_SUBDIR = _default_conda_subdir()
 
 # Disabled by default because both options mutate the selected Python environment.
 INSTALL_DEPENDENCIES = False
@@ -128,6 +145,144 @@ def run_python(script, args=None, cwd=None, env=None, python_executable=BASE_PYT
     if args:
         command.extend(str(arg) for arg in args)
     run(command, cwd=cwd, env=env)
+
+
+def _conda_command(options):
+    configured = getattr(options, "conda_executable", None)
+    if configured:
+        configured = Path(configured).expanduser()
+        if configured.exists():
+            return str(configured)
+        resolved = shutil.which(str(configured))
+        if resolved:
+            return resolved
+        raise FileNotFoundError(f"未找到 conda 可执行文件: {configured}")
+
+    executable = os.environ.get("CONDA_EXE") or shutil.which("conda")
+    if not executable:
+        raise FileNotFoundError(
+            "未找到 conda。请激活 conda，或通过 --conda-executable 指定路径。"
+        )
+    return executable
+
+
+def _version_template_values(required_version):
+    major, minor, patch = normalize_python_version(required_version).split(".")
+    return {
+        "version": f"{major}.{minor}.{patch}",
+        "major": major,
+        "minor": minor,
+        "patch": patch,
+        "major_minor": f"{major}.{minor}",
+        "digits": f"{major}{minor}{patch}",
+    }
+
+
+def _conda_env_python(prefix):
+    prefix = Path(prefix)
+    if os.name == "nt":
+        return prefix / "python.exe"
+    return prefix / "bin" / "python"
+
+
+def _conda_env_prefixes(conda_executable):
+    try:
+        output = subprocess.check_output(
+            [conda_executable, "env", "list", "--json"],
+            text=True,
+            stderr=subprocess.STDOUT,
+        )
+        data = json.loads(output)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise TestEnvironmentError(f"无法读取 conda 环境列表: {error}")
+    return [Path(path) for path in data.get("envs", []) if path]
+
+
+def _matching_conda_python(required_version, options, conda_executable):
+    if options.test_python is not None:
+        assert_exact_python(options.test_python, required_version)
+        return Path(options.test_python).resolve()
+
+    values = _version_template_values(required_version)
+    preferred_name = options.conda_env_name_template.format(**values)
+    preferred_suffixes = {
+        preferred_name,
+        "python-%s" % values["version"],
+        "py%s" % values["digits"],
+        "py%s.%s.%s" % (values["major"], values["minor"], values["patch"]),
+        "py%s.%s" % (values["major"], values["minor"]),
+    }
+    exact_matches = []
+    for prefix in _conda_env_prefixes(conda_executable):
+        python = _conda_env_python(prefix)
+        if not python.exists():
+            continue
+        try:
+            assert_exact_python(python, required_version)
+        except TestEnvironmentError:
+            continue
+        if prefix.name in preferred_suffixes:
+            return python.resolve()
+        exact_matches.append(python.resolve())
+
+    if exact_matches:
+        return exact_matches[0]
+    return None
+
+
+def _create_conda_python(required_version, options, conda_executable):
+    if not options.create_conda_envs:
+        return None
+    values = _version_template_values(required_version)
+    env_root = Path(options.conda_env_root).expanduser()
+    env_prefix = env_root / ("python-%s" % values["version"])
+    python = _conda_env_python(env_prefix)
+    if python.exists():
+        assert_exact_python(python, required_version)
+        return python.resolve()
+
+    env_root.mkdir(parents=True, exist_ok=True)
+    command = [
+        conda_executable,
+        "create",
+        "-y",
+        "-p",
+        str(env_prefix),
+        f"python={values['version']}",
+        "pip",
+    ]
+    if options.conda_channel:
+        command.extend(["-c", options.conda_channel])
+    env = None
+    if options.conda_subdir:
+        env = {**os.environ, "CONDA_SUBDIR": options.conda_subdir}
+    run(command, env=env, timeout=3600)
+    assert_exact_python(python, required_version)
+    return python.resolve()
+
+
+def resolve_test_python_for_record(required_version, options):
+    if options.test_env_provider != "conda":
+        return options.test_env_provider, options.test_python
+
+    conda_executable = _conda_command(options)
+    python = _matching_conda_python(required_version, options, conda_executable)
+    if python is None:
+        python = _create_conda_python(required_version, options, conda_executable)
+    if python is None:
+        raise TestEnvironmentError(
+            "未找到 Python %s 的 conda 环境。可先执行 "
+            "`conda create -n %s python=%s pip`，或开启 --create-conda-envs。"
+            % (
+                required_version,
+                options.conda_env_name_template.format(
+                    **_version_template_values(required_version)
+                ),
+                required_version,
+            )
+        )
+    print(f"Conda Python for {required_version}: {python}")
+    return "local", python
 
 
 def make_base_env():
@@ -366,6 +521,24 @@ def prepare_test_bundle(run_dir, lib_name, record):
                 "test bundle is missing inputs for: %s" % missing_inputs
             )
     return bundle_dir
+
+
+def expected_api_names(record):
+    return [definition.split("(", 1)[0].strip() for definition in record["bug_api"]]
+
+
+def require_artifact_apis(stage_name, api_names, produced_names):
+    produced = set(produced_names)
+    missing = [api_name for api_name in api_names if api_name not in produced]
+    if missing:
+        raise RuntimeError(
+            "%s output is missing APIs: %s; produced APIs: %s"
+            % (
+                stage_name,
+                missing,
+                sorted(produced),
+            )
+        )
 
 
 def prune_unvalidated_path_cases(bundle_dir):
@@ -726,11 +899,42 @@ def _is_git_repository(repo_dir):
     return result.returncode == 0
 
 
+def _project_repo_url(lib_gitname):
+    project_info = BUGSINPY_DIR / lib_gitname / "project.info"
+    if not project_info.exists():
+        return None
+    for line in project_info.read_text(encoding="utf-8").splitlines():
+        match = re.match(r'\s*github_url\s*=\s*["\']([^"\']+)["\']\s*$', line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _snapshot_backup_path(repo_dir):
+    base = repo_dir.with_name(f"{repo_dir.name}.source-snapshot")
+    if not base.exists():
+        return base
+    suffix = time.strftime("%Y%m%d-%H%M%S")
+    return repo_dir.with_name(f"{repo_dir.name}.source-snapshot-{suffix}")
+
+
 def ensure_repo(lib_gitname, repo_url=None):
     repo_dir = DL_LIB_DIR / lib_gitname
+    repo_url = repo_url or _project_repo_url(lib_gitname)
     if repo_dir.exists():
         if not _is_git_repository(repo_dir):
-            raise RuntimeError(f"目标目录不是 Git 仓库: {repo_dir}")
+            if not repo_url:
+                raise RuntimeError(
+                    f"目标目录不是 Git 仓库: {repo_dir}。请通过 --repo-url "
+                    "提供该第三方库的仓库地址。"
+                )
+            backup_dir = _snapshot_backup_path(repo_dir)
+            print(
+                "目标目录不是 Git 仓库，保留源码快照并重新 clone: "
+                f"{repo_dir} -> {backup_dir}"
+            )
+            shutil.move(str(repo_dir), str(backup_dir))
+            run(["git", "clone", repo_url, str(repo_dir)])
         return repo_dir
 
     if not repo_url:
@@ -752,6 +956,45 @@ def verify_commit(repo_dir, commit_hash):
         raise ValueError(f"仓库中不存在 commit: {commit_hash}")
 
 
+def restore_git_symlinks(worktree_path):
+    """Restore symlink entries when Git materializes them as plain files."""
+    worktree_path = Path(worktree_path).resolve()
+    output = subprocess.check_output(
+        ["git", "-C", str(worktree_path), "ls-files", "-s"],
+        text=True,
+    )
+    restored = []
+    for line in output.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) != 4 or parts[0] != "120000":
+            continue
+
+        rel_path = parts[3]
+        path = worktree_path / rel_path
+        link_target = subprocess.check_output(
+            ["git", "-C", str(worktree_path), "show", "HEAD:%s" % rel_path],
+            text=True,
+        ).strip()
+        if path.is_symlink():
+            continue
+        if path.exists():
+            try:
+                materialized = path.read_text(encoding="utf-8").strip()
+            except OSError as error:
+                raise RuntimeError(
+                    "cannot inspect materialized symlink %s: %s" % (path, error)
+                )
+            if materialized != link_target:
+                raise RuntimeError(
+                    "refusing to replace symlink entry with unexpected contents: %s"
+                    % path
+                )
+            path.unlink()
+        os.symlink(link_target, str(path))
+        restored.append(rel_path)
+    return restored
+
+
 @contextmanager
 def managed_worktree(repo_dir, commit_hash, label, keep=False):
     worktree_root = RUNTIME_DIR / "worktrees"
@@ -770,6 +1013,12 @@ def managed_worktree(repo_dir, commit_hash, label, keep=False):
             commit_hash,
         ]
     )
+    restored_symlinks = restore_git_symlinks(worktree_path)
+    if restored_symlinks:
+        print(
+            "Restored Git symlinks in worktree: %s"
+            % ", ".join(restored_symlinks)
+        )
     try:
         yield worktree_path
     finally:
@@ -818,6 +1067,22 @@ def cleanup_intermediate_files(lib_name):
 def cleanup_transient_results(lib_name):
     patterns = [pattern.format(lib=lib_name) for pattern in RESULT_PATTERNS]
     _unlink_patterns(RESULTS_DIR, patterns)
+
+
+def summarize_static_paths(lib_name):
+    paths_by_api = _merge_json_files(
+        ROOT / "documentation" / "arg_space",
+        f"{lib_name}_arg_space_*.json",
+    )
+    counts = {
+        api_name: len(paths)
+        for api_name, paths in paths_by_api.items()
+        if isinstance(paths, list)
+    }
+    return {
+        "total": sum(counts.values()),
+        "apis": counts,
+    }
 
 
 def summarize_baseline(baseline_paths):
@@ -943,6 +1208,26 @@ def write_failure(lib_name, record, error):
     )
 
 
+def write_skipped(lib_name, record, reason):
+    target_dir = RESULTS_DIR / lib_name / f"{lib_name}_{record['bug_id']}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for pattern in RESULT_PATTERNS:
+        for old_path in target_dir.glob(pattern.format(lib=lib_name)):
+            if old_path.is_file():
+                old_path.unlink()
+    failure_path = target_dir / "failure.json"
+    if failure_path.exists():
+        failure_path.unlink()
+    payload = {
+        "status": "skipped",
+        "record": record,
+        "reason": reason,
+    }
+    (target_dir / "run_manifest.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
 def should_use_joern(mode, lib_name, apis):
     if mode == "always":
         return True
@@ -967,8 +1252,14 @@ def process_record(record, repo_dir, options):
     requirements_metadata = prepare_requirements(
         environment_metadata["requirements"],
         normalized_requirements,
+        target_package_names(options.lib_name, options.lib_gitname),
+        extra_requirements=project_extra_requirements(
+            options.lib_name,
+            options.lib_gitname,
+        ),
     )
     completed = False
+    skipped = False
     repair_rounds_used = 0
     pruning_summary = None
 
@@ -977,24 +1268,29 @@ def process_record(record, repo_dir, options):
     print("Strict test Python: %s" % required_python)
     cleanup_intermediate_files(options.lib_name)
     cleanup_transient_results(options.lib_name)
+    api_names = expected_api_names(record)
 
     try:
         write_api_defs(options.lib_name, record["bug_api"])
+        test_env_provider, test_python = resolve_test_python_for_record(
+            required_python,
+            options,
+        )
         print("\n--- create strict Bug/Fix test environments ---")
         bug_test_environment = StrictTestEnvironment(
             required_python,
             run_dir / "envs" / "bug",
             options.python,
-            provider=options.test_env_provider,
-            explicit_python=options.test_python,
+            provider=test_env_provider,
+            explicit_python=test_python,
             index_url=options.index_url,
         ).create()
         fix_test_environment = StrictTestEnvironment(
             required_python,
             run_dir / "envs" / "fix",
             options.python,
-            provider=options.test_env_provider,
-            explicit_python=options.test_python,
+            provider=test_env_provider,
+            explicit_python=test_python,
             index_url=options.index_url,
         ).create()
         bug_test_environment.install_requirements(
@@ -1004,6 +1300,16 @@ def process_record(record, repo_dir, options):
         fix_test_environment.install_requirements(
             normalized_requirements,
             requirements_metadata,
+        )
+        compatibility_requirements = project_no_deps_requirements(
+            options.lib_name,
+            options.lib_gitname,
+        )
+        bug_test_environment.install_requirements_without_dependencies(
+            compatibility_requirements
+        )
+        fix_test_environment.install_requirements_without_dependencies(
+            compatibility_requirements
         )
 
         with managed_worktree(
@@ -1021,6 +1327,7 @@ def process_record(record, repo_dir, options):
             bug_env["MOMO_REQUIRED_PYTHON"] = required_python
             bug_env["MOMO_BUG_ID"] = str(bug_id)
             bug_env["MOMO_BUG_DIR"] = str(environment_metadata["bug_dir"])
+            bug_env["MOMO_LLM_WORKERS"] = str(options.llm_workers)
 
             if should_use_joern(options.joern, options.lib_name, record["bug_api"]):
                 print("\n--- Joern importCode ---")
@@ -1028,6 +1335,7 @@ def process_record(record, repo_dir, options):
             else:
                 print("\n--- Joern skipped (Python-only library) ---")
 
+            write_api_defs(options.lib_name, record["bug_api"])
             print("\n--- stage_2_function.py (bug version) ---")
             run_python(
                 "stage_2_function.py",
@@ -1036,7 +1344,37 @@ def process_record(record, repo_dir, options):
                 python_executable=options.python,
             )
 
+            path_summary = summarize_static_paths(options.lib_name)
+            require_artifact_apis(
+                "stage_2_function.py",
+                api_names,
+                path_summary["apis"].keys(),
+            )
+            print(
+                "Static paths for bug %s: %s (%s)"
+                % (
+                    bug_id,
+                    path_summary["total"],
+                    ", ".join(
+                        "%s=%s" % item
+                        for item in sorted(path_summary["apis"].items())
+                    ),
+                )
+            )
+            if path_summary["total"] > options.max_paths_per_bug:
+                skipped = True
+                print(
+                    "跳过 bug %s：静态路径总数 %s 超过 --max-paths-per-bug=%s。"
+                    % (
+                        bug_id,
+                        path_summary["total"],
+                        options.max_paths_per_bug,
+                    )
+                )
+                return False
+
             print("\n--- main.py --phase algo (bug version) ---")
+            write_api_defs(options.lib_name, record["bug_api"])
             run_python(
                 "main.py",
                 args=["--phase", "algo", "--k", str(options.k)],
@@ -1050,11 +1388,32 @@ def process_record(record, repo_dir, options):
                 options.lib_name,
                 record,
             )
+            bundle_cases = json.loads(
+                (bundle_dir / "test_cases.json").read_text(encoding="utf-8")
+            )
+            require_artifact_apis(
+                "main.py --phase algo",
+                api_names,
+                bundle_cases.keys() if isinstance(bundle_cases, dict) else [],
+            )
 
-            bug_test_environment.run_setup(
-                environment_metadata["setup"],
+            prepare_target_worktree_for_install(
+                options.lib_name,
+                options.lib_gitname,
                 bug_repo,
-                environment_metadata["pythonpath"],
+            )
+            if should_run_project_setup(options.lib_name, options.lib_gitname):
+                bug_test_environment.run_setup(
+                    environment_metadata["setup"],
+                    bug_repo,
+                    environment_metadata["pythonpath"],
+                )
+            else:
+                print("Skipped redundant Sanic BugsInPy setup.sh.")
+            prepare_target_worktree_for_install(
+                options.lib_name,
+                options.lib_gitname,
+                bug_repo,
             )
             bug_test_environment.install_target(bug_repo)
             bug_test_env = bug_test_environment.runtime_env(
@@ -1122,10 +1481,12 @@ def process_record(record, repo_dir, options):
 
             pruning_summary = prune_unvalidated_path_cases(bundle_dir)
             if pruning_summary["validated"] == 0:
-                raise RuntimeError(
-                    "no path test cases validated after "
-                    f"{options.max_repair_rounds} repair rounds"
+                print(
+                    "No path test cases validated after "
+                    f"{options.max_repair_rounds} repair rounds; "
+                    "skipping this bug."
                 )
+                return False
             if pruning_summary["pruned"]:
                 print(
                     "Discarded invalid path cases after repair budget: "
@@ -1161,10 +1522,23 @@ def process_record(record, repo_dir, options):
             f"{options.lib_name}-{bug_id}-fix",
             keep=options.keep_worktrees,
         ) as fix_repo:
-            fix_test_environment.run_setup(
-                environment_metadata["setup"],
+            prepare_target_worktree_for_install(
+                options.lib_name,
+                options.lib_gitname,
                 fix_repo,
-                environment_metadata["pythonpath"],
+            )
+            if should_run_project_setup(options.lib_name, options.lib_gitname):
+                fix_test_environment.run_setup(
+                    environment_metadata["setup"],
+                    fix_repo,
+                    environment_metadata["pythonpath"],
+                )
+            else:
+                print("Skipped redundant Sanic BugsInPy setup.sh.")
+            prepare_target_worktree_for_install(
+                options.lib_name,
+                options.lib_gitname,
+                fix_repo,
             )
             fix_test_environment.install_target(fix_repo)
             fix_test_env = fix_test_environment.runtime_env(
@@ -1200,6 +1574,8 @@ def process_record(record, repo_dir, options):
             "fix_test_environment": fix_test_environment.manifest(),
             "joern_mode": options.joern,
             "test_cases_per_path": options.k,
+            "max_paths_per_bug": options.max_paths_per_bug,
+            "static_paths": path_summary,
             "repair_rounds_used": repair_rounds_used,
             "max_repair_rounds": options.max_repair_rounds,
             "path_case_pruning": pruning_summary,
@@ -1212,7 +1588,7 @@ def process_record(record, repo_dir, options):
     finally:
         cleanup_intermediate_files(options.lib_name)
         cleanup_transient_results(options.lib_name)
-        if completed and not options.keep_test_envs:
+        if (completed or skipped) and not options.keep_test_envs:
             shutil.rmtree(run_dir, ignore_errors=True)
 
 
@@ -1221,8 +1597,137 @@ def _validate_name(value, option_name):
         raise ValueError(f"{option_name} 包含非法字符: {value}")
 
 
+def parse_bug_ids(value):
+    if value is None:
+        value = BUG_IDS
+    if isinstance(value, str):
+        raw_items = re.split(r"[,\s]+", value.strip())
+    else:
+        raw_items = list(value)
+    bug_ids = []
+    for item in raw_items:
+        if item in (None, ""):
+            continue
+        try:
+            bug_id = int(item)
+        except (TypeError, ValueError):
+            raise ValueError(f"非法 bug_id: {item!r}") from None
+        if bug_id not in bug_ids:
+            bug_ids.append(bug_id)
+    return bug_ids
+
+
+def select_records(records, start, end, bug_ids=None):
+    selected_bug_ids = parse_bug_ids(bug_ids)
+    if not selected_bug_ids:
+        return records[start:end]
+    record_by_id = {record["bug_id"]: record for record in records}
+    missing = [bug_id for bug_id in selected_bug_ids if bug_id not in record_by_id]
+    if missing:
+        raise ValueError(f"指定的 bug_id 不存在: {missing}")
+    return [record_by_id[bug_id] for bug_id in selected_bug_ids]
+
+
+def target_package_names(lib_name, lib_gitname):
+    names = {lib_name, lib_gitname}
+    if "ansible" in names:
+        names.update({"ansible-base", "ansible-core"})
+    return sorted(name for name in names if name)
+
+
+def project_extra_requirements(lib_name, lib_gitname):
+    names = {lib_name, lib_gitname}
+    if "matplotlib" in names:
+        return [
+            "numpy==1.19.5",
+            "cycler>=0.10",
+            "kiwisolver>=1.0.1",
+            "pyparsing>=2.0.1,<3",
+            "python-dateutil>=2.1",
+            "pillow>=6.2.0",
+        ]
+    if "sanic" in names:
+        return [
+            "httptools>=0.0.10",
+            "uvloop>=0.5.3",
+            "ujson==4.3.0",
+            "aiofiles>=0.3.0",
+            "websockets>=7.0,<9.0",
+            "multidict>=4.0,<5.0",
+        ]
+    return []
+
+
+def project_no_deps_requirements(lib_name, lib_gitname):
+    if "sanic" in {lib_name, lib_gitname}:
+        return [
+            (
+                "git+https://github.com/encode/requests-async.git"
+                "@614f40f77f19e6c6da8a212ae799107b0384dbf9"
+            )
+        ]
+    return []
+
+
+def should_run_project_setup(lib_name, lib_gitname):
+    # Sanic's BugsInPy setup only repeats target/extras installation and pins
+    # requests-async==0.5.0, whose release is no longer available from PyPI.
+    return "sanic" not in {lib_name, lib_gitname}
+
+
+def prepare_target_worktree_for_install(lib_name, lib_gitname, worktree):
+    names = {lib_name, lib_gitname}
+    worktree = Path(worktree)
+    setup_cfg = worktree / "setup.cfg"
+    if "matplotlib" in names:
+        if setup_cfg.exists():
+            return setup_cfg
+        setup_cfg.write_text(
+            "[libs]\n"
+            "system_freetype = True\n"
+            "system_qhull = False\n\n"
+            "[packages]\n"
+            "tests = False\n"
+            "sample_data = True\n",
+            encoding="utf-8",
+        )
+        print(f"Wrote matplotlib build config: {setup_cfg}")
+        return setup_cfg
+    if "pandas" in names:
+        setup_py = worktree / "setup.py"
+        if not setup_py.exists():
+            return None
+        text = setup_py.read_text(encoding="utf-8")
+        original = text
+        werror_marker = "# MOMO: disabled -Werror for modern clang compatibility"
+        clang_marker = "# MOMO: suppress modern clang incompatible function pointer errors"
+        if clang_marker in text:
+            return setup_py
+        text = text.replace(
+            'extra_compile_args = ["-Werror"]',
+            f"extra_compile_args = []  {werror_marker}",
+        )
+        text = text.replace(
+            'extra_compile_args = ["-Wno-unused-function"]',
+            (
+                'extra_compile_args = [\n'
+                '        "-Wno-unused-function",\n'
+                '        "-Wno-incompatible-function-pointer-types",\n'
+                f"    ]  {clang_marker}"
+            ),
+        )
+        if text == original:
+            return None
+        setup_py.write_text(text, encoding="utf-8")
+        print(f"Patched pandas build warnings: {setup_py}")
+        return setup_py
+    return None
+
+
 def validate_local_layout(options, lib_file, joern_required):
     required_paths = [DATABASE_DIR, MOMO_DIR, DL_LIB_DIR, lib_file, options.python]
+    if options.test_python is not None:
+        required_paths.append(options.test_python)
     if joern_required:
         required_paths.append(JOERN_EXE)
     missing = [Path(path) for path in required_paths if not Path(path).exists()]
@@ -1236,6 +1741,10 @@ def validate_local_layout(options, lib_file, joern_required):
         raise ValueError("--k 必须大于 0。")
     if options.max_repair_rounds <= 0:
         raise ValueError("--max-repair-rounds 必须大于 0。")
+    if options.llm_workers <= 0:
+        raise ValueError("--llm-workers 必须大于 0。")
+    if options.max_paths_per_bug <= 0:
+        raise ValueError("--max-paths-per-bug 必须大于 0。")
     _validate_name(options.lib_name, "--lib-name")
     _validate_name(options.lib_gitname, "--lib-gitname")
 
@@ -1256,6 +1765,14 @@ def build_parser():
         help="Exclusive record index. Omit to run through the end of the lib file.",
     )
     parser.add_argument(
+        "--bug-ids",
+        default=None,
+        help=(
+            "Comma/space separated bug_id list. Overrides --start/--end, "
+            "for example: --bug-ids 2,5,7."
+        ),
+    )
+    parser.add_argument(
         "--k",
         type=int,
         default=DEFAULT_K,
@@ -1268,6 +1785,21 @@ def build_parser():
         help="Maximum V1 execute-review-repair rounds before the record fails.",
     )
     parser.add_argument(
+        "--llm-workers",
+        type=int,
+        default=DEFAULT_LLM_WORKERS,
+        help="Parallel LLM workers inside generation and repair stages.",
+    )
+    parser.add_argument(
+        "--max-paths-per-bug",
+        type=int,
+        default=DEFAULT_MAX_PATHS_PER_BUG,
+        help=(
+            "Skip a bug before LLM generation when its total static paths "
+            "exceed this limit."
+        ),
+    )
+    parser.add_argument(
         "--python",
         type=Path,
         default=BASE_PYTHON,
@@ -1275,15 +1807,64 @@ def build_parser():
     )
     parser.add_argument(
         "--test-env-provider",
-        choices=["auto", "local", "uv", "pyenv"],
-        default="auto",
+        choices=["conda", "auto", "local", "uv", "pyenv"],
+        default=DEFAULT_TEST_ENV_PROVIDER,
         help="Provider used to create exact-version Bug/Fix test environments.",
     )
     parser.add_argument(
         "--test-python",
         type=Path,
+        default=DEFAULT_TEST_PYTHON,
+        help=(
+            "Optional exact-version Python. With --test-env-provider=conda, "
+            "this conda Python is validated against each record."
+        ),
+    )
+    parser.add_argument(
+        "--conda-executable",
+        type=Path,
         default=None,
-        help="Optional exact-version local Python used by the local provider.",
+        help="Optional conda executable path. Defaults to CONDA_EXE or PATH.",
+    )
+    parser.add_argument(
+        "--conda-env-root",
+        type=Path,
+        default=DEFAULT_CONDA_ENV_ROOT,
+        help="Directory for auto-created conda seed environments.",
+    )
+    parser.add_argument(
+        "--conda-env-name-template",
+        default=DEFAULT_CONDA_ENV_NAME_TEMPLATE,
+        help=(
+            "Preferred conda env name pattern when selecting existing envs. "
+            "Available fields: {version}, {major}, {minor}, {patch}, "
+            "{major_minor}, {digits}."
+        ),
+    )
+    parser.add_argument(
+        "--conda-channel",
+        default=None,
+        help="Optional channel used when --create-conda-envs creates envs.",
+    )
+    parser.add_argument(
+        "--conda-subdir",
+        default=DEFAULT_CONDA_SUBDIR,
+        help=(
+            "Optional CONDA_SUBDIR for created conda envs. "
+            "Defaults to osx-64 on Apple Silicon."
+        ),
+    )
+    parser.add_argument(
+        "--create-conda-envs",
+        action="store_true",
+        default=False,
+        help="Create missing conda seed envs for python_version values.",
+    )
+    parser.add_argument(
+        "--no-create-conda-envs",
+        action="store_false",
+        dest="create_conda_envs",
+        help="Only use existing conda envs; fail when a version is missing.",
     )
     parser.add_argument("--index-url", default=DEFAULT_INDEX_URL)
     parser.add_argument("--case-timeout", type=float, default=5.0)
@@ -1320,13 +1901,26 @@ def main(argv=None):
         options.test_python = Path(
             os.path.abspath(str(options.test_python.expanduser()))
         )
+    if options.conda_executable is not None:
+        options.conda_executable = Path(
+            os.path.abspath(str(options.conda_executable.expanduser()))
+        )
+    options.conda_env_root = Path(
+        os.path.abspath(str(options.conda_env_root.expanduser()))
+    )
 
     lib_file = Path(options.lib_file)
     if not lib_file.is_absolute():
         lib_file = DATABASE_DIR / lib_file
 
     records = parse_lib_file(lib_file)
-    selected = records[options.start : options.end]
+    selected_bug_ids = parse_bug_ids(options.bug_ids)
+    selected = select_records(
+        records,
+        options.start,
+        options.end,
+        selected_bug_ids,
+    )
     joern_required = any(
         should_use_joern(options.joern, options.lib_name, record["bug_api"])
         for record in selected
@@ -1343,7 +1937,10 @@ def main(argv=None):
         bugsinpy_record_metadata(options.lib_gitname, record)
 
     print(f"Loaded {len(records)} records from {lib_file}")
-    print(f"Selected {len(selected)} records [{options.start}:{options.end}]")
+    if selected_bug_ids:
+        print(f"Selected {len(selected)} records by bug_id: {selected_bug_ids}")
+    else:
+        print(f"Selected {len(selected)} records [{options.start}:{options.end}]")
     print(json.dumps(selected, ensure_ascii=False, indent=2))
 
     if options.preflight_only:
@@ -1351,10 +1948,17 @@ def main(argv=None):
         return 0
 
     failures = []
+    skipped = []
     for index, record in enumerate(selected, start=options.start):
         print(f"\nProcessing record #{index} (bug_id={record['bug_id']})")
         try:
-            process_record(record, repo_dir, options)
+            if process_record(record, repo_dir, options) is False:
+                skipped.append(record["bug_id"])
+                write_skipped(
+                    options.lib_name,
+                    record,
+                    "pipeline skipped this record before producing validated results",
+                )
         except Exception as error:
             failures.append(record["bug_id"])
             write_failure(options.lib_name, record, error)
@@ -1367,7 +1971,12 @@ def main(argv=None):
                 raise
 
     print(f"\n{'=' * 80}")
-    print(f"Done. Processed: {len(selected)}, failed: {len(failures)}")
+    print(
+        "Done. Processed: %s, skipped: %s, failed: %s"
+        % (len(selected), len(skipped), len(failures))
+    )
+    if skipped:
+        print(f"Skipped bug IDs: {skipped}")
     if failures:
         print(f"Failed bug IDs: {failures}")
         return 1

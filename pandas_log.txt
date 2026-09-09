@@ -1,0 +1,3 @@
+pandas.core.missing.interpolate_1d
+pandas.core.indexes.accessors.CombinedDatetimelikeProperties.__new__
+pandas.core.indexes.accessors.Properties._delegate_property_get

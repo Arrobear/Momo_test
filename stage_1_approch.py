@@ -1,6 +1,7 @@
 from config import *
 from stage_1_function import *
 from generate_prompt import *
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import inspect
 import sys
 import threading
@@ -125,11 +126,19 @@ def base_condition_filter(api_names):
 
         # 得到所有合法参数 -> 生成组合 -> 过滤组合
         args = get_all_parameters(function_name)
-        all_combinations = generate_all_combinations(args)
-
         json_path = root_path + f'/documentation/conditions/{lib_name}_conditions.json'
         conditions = get_api_conditions(function_name, json_path)
+        all_combinations = generate_bounded_parameter_combinations(
+            args,
+            conditions,
+        )
         filtered_combinations = filter_combinations(all_combinations, conditions)
+        print(
+            "[组合生成] "
+            f"{function_name}: params={len(args)}, "
+            f"candidates={len(all_combinations)}, "
+            f"filtered={len(filtered_combinations)}"
+        )
 
         # ==========================================
         # 核心逻辑修改：如果组合为空，记录待删除
@@ -188,9 +197,6 @@ def base_condition_filter(api_names):
 
 
 def check_condition_filter(api_names):
-    # 初始化 DeepSeek 客户端
-    client = make_client()
-
     with open(f"../documentation/lib_api/{lib_name}_APIdef.txt", 'r', encoding='utf-8') as file:
         api_defs = [line.strip() for line in file]
 
@@ -224,29 +230,54 @@ def check_condition_filter(api_names):
             if i >= len(api_names): break
             continue
 
-        n = 0  # 进度计数
-        for arg_combination in arg_combinations:
-            prompt_2 = generate_prompt_2(fun_string, arg_combination, api_def, api_doc)
-            # prompt_2 = "".join(char for char in str(prompt_2) if char.isprintable() or char in "\n\t")
-            # --- API 调用替代本地模型推理 ---
-            outputs_text = call_llm_with_retry(
-                client, MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a professional software testing assistant."},
-                    {"role": "user", "content": prompt_2},
-                ]
+        llm_workers = get_llm_worker_count()
+        batch_size = get_llm_combination_batch_size()
+        tasks = []
+        for batch_index, start in enumerate(
+            range(0, len(arg_combinations), batch_size)
+        ):
+            tasks.append(
+                {
+                    "batch_index": batch_index,
+                    "start_index": start,
+                    "fun_string": fun_string,
+                    "arg_combinations": arg_combinations[
+                        start : start + batch_size
+                    ],
+                    "api_def": api_def,
+                    "api_doc": api_doc,
+                }
             )
-            # print(outputs_text)
+        completed = []
+        if llm_workers == 1 or len(tasks) <= 1:
+            for task in tasks:
+                completed.extend(_check_condition_combination_batch(task))
+                print(
+                    f"API: {function_name} | "
+                    f"进度：{len(completed)}/{len(arg_combinations)}"
+                )
+        else:
+            print(
+                "批量并行检查参数组合: "
+                f"{function_name}, combinations={len(arg_combinations)}, "
+                f"batches={len(tasks)}, batch_size={batch_size}, "
+                f"workers={llm_workers}"
+            )
+            with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+                futures = [
+                    executor.submit(_check_condition_combination_batch, task)
+                    for task in tasks
+                ]
+                for future in as_completed(futures):
+                    completed.extend(future.result())
+                    print(
+                        f"API: {function_name} | "
+                        f"进度：{len(completed)}/{len(arg_combinations)}"
+                    )
 
-            # 处理输出并判断
-            # 注意：API 返回的 outputs_text 不包含 prompt，handle_output 逻辑可能需要适配
-            #error_tag = handle_output(outputs_text, model_path)
-            # print(error_tag)
-            if 'False' in outputs_text:
+        for _, arg_combination, is_error in sorted(completed, key=lambda item: item[0]):
+            if is_error:
                 error_combinations.append(arg_combination)
-            
-            n += 1
-            print(f"API: {function_name} | 进度：{n}/{len(arg_combinations)}")
         # --------------------------------
         path = root_path + f'/documentation/error_combinations/error_{lib_name}_combinations.json'
         # path = f'/tmp/Momo_test/error_combinations/error_{lib_name}_combinations.json'
@@ -259,10 +290,87 @@ def check_condition_filter(api_names):
 
 # 剪枝后组合
 
-def generate_api_boundary(api_names):
-    # 初始化 DeepSeek 客户端
-    client = make_client()
+def _check_condition_combination_batch(task):
+    prompt_2 = generate_prompt_2(
+        task["fun_string"],
+        task["arg_combinations"],
+        task["api_def"],
+        task["api_doc"],
+    )
+    outputs_text = call_llm_with_retry(
+        _thread_llm_client(),
+        MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a professional software testing assistant.",
+            },
+            {"role": "user", "content": prompt_2},
+        ],
+        temperature=0.0,
+        top_p=1.0,
+        seed=42 + task["batch_index"],
+    )
+    payload = extract_clean_json(outputs_text)
+    results = payload.get("results") if isinstance(payload, dict) else None
+    expected_count = len(task["arg_combinations"])
+    if not isinstance(results, list) or len(results) != expected_count:
+        raise RuntimeError(
+            "LLM combination batch returned %s results; expected %s"
+            % (len(results) if isinstance(results, list) else "invalid", expected_count)
+        )
 
+    completed = []
+    for local_index, result in enumerate(results):
+        if (
+            not isinstance(result, dict)
+            or result.get("index") != local_index
+            or not isinstance(result.get("valid"), bool)
+        ):
+            raise RuntimeError(
+                "LLM combination batch returned an invalid result at index %s"
+                % local_index
+            )
+        global_index = task["start_index"] + local_index
+        completed.append(
+            (
+                global_index,
+                task["arg_combinations"][local_index],
+                not result["valid"],
+            )
+        )
+    return completed
+
+
+def _generate_one_api_boundary(task):
+    prompt = generate_prompt_3(
+        task["api_name"],
+        task["comb"],
+        task["arg_space"],
+        task["parameter_types"],
+    )
+    outputs_text = call_llm_with_retry(
+        _thread_llm_client(),
+        MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a specialized AI for API boundary analysis "
+                    "and software testing."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    api_boundary = extract_clean_json(outputs_text)
+    return task, {
+        "path_type": task["path_type"],
+        "api_input": api_boundary,
+    }
+
+
+def generate_api_boundary(api_names):
     # 移除 if lib_name == "torch" 判断，直接进入通用流程
     j = 0
     path = root_path + f'/documentation/arg_boundary/cut_{lib_name}_boundary_{j}.json'
@@ -289,11 +397,10 @@ def generate_api_boundary(api_names):
             i += 1
             continue
 
-        length_arg_spaces = len(arg_combinations)
-
+        llm_workers = get_llm_worker_count()
+        tasks = []
         for arg_combination in arg_combinations:
             combinations = arg_combination["combinations"]
-            length_combinations = len(combinations)
 
             # 匹配参数空间 ID
             arg_space = None
@@ -306,25 +413,47 @@ def generate_api_boundary(api_names):
                 continue
 
             for comb_idx, comb in enumerate(combinations):
-
-
-                path_type = arg_space["path_type"]
-                prompt = generate_prompt_3(api_name, comb, arg_space, conditions["Parameter type"])
-
-                # --- 调用线上 API ---
-                outputs_text = call_llm_with_retry(
-                    client, MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a specialized AI for API boundary analysis and software testing."},
-                        {"role": "user", "content": prompt},
-                    ]
+                tasks.append(
+                    {
+                        "arg_group_index": len(tasks),
+                        "api_name": api_name,
+                        "comb": comb,
+                        "arg_space": arg_space,
+                        "path_type": arg_space["path_type"],
+                        "parameter_types": conditions["Parameter type"],
+                    }
                 )
 
-                # 解析输出
-                api_boundary = extract_clean_json(outputs_text)
+        completed = []
+        if llm_workers == 1 or len(tasks) <= 1:
+            for task in tasks:
+                completed.append(_generate_one_api_boundary(task))
+                print(
+                    "LLM boundary progress: "
+                    f"{api_name} {len(completed)}/{len(tasks)}"
+                )
+        else:
+            print(
+                "并行生成参数边界: "
+                f"{api_name}, {len(tasks)} 个 LLM 任务, workers={llm_workers}"
+            )
+            with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+                futures = [
+                    executor.submit(_generate_one_api_boundary, task)
+                    for task in tasks
+                ]
+                for future in as_completed(futures):
+                    completed.append(future.result())
+                    print(
+                        "LLM boundary progress: "
+                        f"{api_name} {len(completed)}/{len(tasks)}"
+                    )
 
-                new_api_input_boundary = {"path_type": path_type, "api_input": api_boundary}
-                api_inputs.append(new_api_input_boundary)
+        for _, boundary in sorted(
+            completed,
+            key=lambda item: item[0]["arg_group_index"],
+        ):
+            api_inputs.append(boundary)
 
         # 存储至 JSON
         # 确保目录存在
@@ -635,9 +764,62 @@ def _load_bugsinpy_context(documentation_dir):
     }
 
 
+_thread_local_llm = threading.local()
+
+
+def _thread_llm_client():
+    client = getattr(_thread_local_llm, "client", None)
+    if client is None:
+        client = make_client()
+        _thread_local_llm.client = client
+    return client
+
+
+def _generate_one_path_case(task):
+    prompt = generate_prompt_9(
+        api_name=task["api_name"],
+        api_signature=task["api_def"],
+        api_doc=task["api_doc"],
+        api_code=task["api_code"],
+        conditions=task["conditions"],
+        api_boundaries=task["api_boundaries"],
+        bug_context=task["bug_context"],
+        path_data=task["path_data"],
+        sample_index=task["sample_index"],
+        required_python=task["required_python"],
+    )
+    outputs_text = call_llm_with_retry(
+        _thread_llm_client(),
+        MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Generate executable path-specific Python tests. "
+                    "Output JSON only."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.0,
+        top_p=1.0,
+        seed=42 + task["sample_index"],
+    )
+    payload = _extract_path_test_case_payload(outputs_text)
+    if payload is None:
+        payload = {
+            "code": (
+                "def run_test_case():\n"
+                "    raise RuntimeError("
+                "'initial LLM output did not contain a runnable test')"
+            ),
+            "summary": "Initial generation could not be parsed.",
+        }
+    return task, payload
+
+
 def generate_test_cases(api_names, k=1):
 
-    client = make_client()
     if k <= 0:
         raise ValueError("k must be greater than zero")
 
@@ -654,6 +836,9 @@ def generate_test_cases(api_names, k=1):
     path = str(documentation_dir / "test_cases" / f"{lib_name}_case_{j}.json")
     required_python = os.environ.get("MOMO_REQUIRED_PYTHON", "unknown")
     bug_context = _load_bugsinpy_context(documentation_dir)
+    llm_workers = get_llm_worker_count()
+    tasks = []
+    api_metadata = []
 
     for i in range(len(api_names)):
         api_name = api_names[i]
@@ -689,7 +874,18 @@ def generate_test_cases(api_names, k=1):
                 "src": [],
             }]
 
-        path_cases = []
+        api_metadata.append(
+            {
+                "api_index": i,
+                "api_name": api_name,
+                "api_def": api_def,
+                "api_doc": api_doc,
+                "api_code": api_code,
+                "conditions": conditions,
+                "api_boundaries": api_boundaries,
+                "arg_spaces": arg_spaces,
+            }
+        )
         for path_index, path_data in enumerate(arg_spaces):
             if not isinstance(path_data, dict):
                 continue
@@ -698,69 +894,88 @@ def generate_test_cases(api_names, k=1):
             expected_status = "error" if path_type == "raise" else "success"
 
             for sample_index in range(k):
-                prompt = generate_prompt_9(
-                    api_name=api_name,
-                    api_signature=api_def,
-                    api_doc=api_doc,
-                    api_code=api_code,
-                    conditions=conditions,
-                    api_boundaries=api_boundaries,
-                    bug_context=bug_context,
-                    path_data=path_data,
-                    sample_index=sample_index,
-                    required_python=required_python,
-                )
-                outputs_text = call_llm_with_retry(
-                    client,
-                    MODEL,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "Generate executable path-specific Python tests. "
-                                "Output JSON only."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.0,
-                    top_p=1.0,
-                    seed=42 + sample_index,
-                )
-                payload = _extract_path_test_case_payload(outputs_text)
-                if payload is None:
-                    payload = {
-                        "code": (
-                            "def run_test_case():\n"
-                            "    raise RuntimeError("
-                            "'initial LLM output did not contain a runnable test')"
-                        ),
-                        "summary": "Initial generation could not be parsed.",
+                tasks.append(
+                    {
+                        "api_index": i,
+                        "api_name": api_name,
+                        "api_def": api_def,
+                        "api_doc": api_doc,
+                        "api_code": api_code,
+                        "conditions": conditions,
+                        "api_boundaries": api_boundaries,
+                        "bug_context": bug_context,
+                        "path_index": path_index,
+                        "path_data": path_data,
+                        "path_id": path_id,
+                        "path_type": path_type,
+                        "expected_status": expected_status,
+                        "sample_index": sample_index,
+                        "required_python": required_python,
                     }
+                )
 
-                path_cases.append({
-                    "schema_version": 2,
-                    "case_id": f"{path_id}::case_{sample_index + 1}",
-                    "api_name": api_name,
-                    "api_signature": api_def,
-                    "required_python": required_python,
-                    "api_documentation": api_doc,
-                    "api_source": api_code,
-                    "parameter_conditions": conditions,
-                    "boundary_context": api_boundaries,
-                    "bug_context": bug_context,
-                    "path_id": path_id,
-                    "path_type": path_type,
-                    "path_constraints": path_data.get("conjuncts", []),
-                    "path_source": path_data.get("src", []),
-                    "expected_status": expected_status,
-                    "code": payload["code"],
-                    "summary": payload["summary"],
-                    "revision": 0,
-                    "validated": False,
-                    "validation_history": [],
-                })
+    print(
+        "并行生成路径测试案例: "
+        f"{len(tasks)} 个 LLM 任务, workers={llm_workers}"
+    )
+    generated = []
+    if llm_workers == 1 or len(tasks) <= 1:
+        for task in tasks:
+            generated.append(_generate_one_path_case(task))
+            print(
+                "LLM path case progress: "
+                f"{len(generated)}/{len(tasks)}"
+            )
+    else:
+        with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+            futures = [
+                executor.submit(_generate_one_path_case, task)
+                for task in tasks
+            ]
+            for future in as_completed(futures):
+                generated.append(future.result())
+                print(
+                    "LLM path case progress: "
+                    f"{len(generated)}/{len(tasks)}"
+                )
 
+    path_cases_by_api = {metadata["api_index"]: [] for metadata in api_metadata}
+    for task, payload in sorted(
+        generated,
+        key=lambda item: (
+            item[0]["api_index"],
+            item[0]["path_index"],
+            item[0]["sample_index"],
+        ),
+    ):
+        path_data = task["path_data"]
+        path_cases_by_api[task["api_index"]].append({
+            "schema_version": 2,
+            "case_id": f"{task['path_id']}::case_{task['sample_index'] + 1}",
+            "api_name": task["api_name"],
+            "api_signature": task["api_def"],
+            "required_python": required_python,
+            "api_documentation": task["api_doc"],
+            "api_source": task["api_code"],
+            "parameter_conditions": task["conditions"],
+            "boundary_context": task["api_boundaries"],
+            "bug_context": bug_context,
+            "path_id": task["path_id"],
+            "path_type": task["path_type"],
+            "path_constraints": path_data.get("conjuncts", []),
+            "path_source": path_data.get("src", []),
+            "expected_status": task["expected_status"],
+            "code": payload["code"],
+            "summary": payload["summary"],
+            "revision": 0,
+            "validated": False,
+            "validation_history": [],
+        })
+
+    for metadata in api_metadata:
+        i = metadata["api_index"]
+        api_name = metadata["api_name"]
+        path_cases = path_cases_by_api.get(i, [])
         if is_file_too_large(path, max_size_mb=1000):
             j += 1
             path = str(
@@ -772,7 +987,7 @@ def generate_test_cases(api_names, k=1):
         save_api_inputs(api_name, path_cases, path)
         print(
             f"已完成 {api_name} 的路径测试案例生成: "
-            f"{len(arg_spaces)} 条路径 x {k}, "
+            f"{len(metadata['arg_spaces'])} 条路径 x {k}, "
             f"进度 {i + 1}/{len(api_names)}"
         )
 
@@ -859,7 +1074,7 @@ def _load_run_api(api_name):
             if callable(generated):
                 return generated
         except Exception as e:
-            print(f"解析 {api_name} 的 case 代码失败: {e}")
+            print(f"解析 {api_name} 的 case 代码失败: {e}") # ignore_security_alert # ignore_security_alert # ignore_security_alert # ignore_security_alert
 
     target = _resolve_api_callable(api_name)
     if target is None:

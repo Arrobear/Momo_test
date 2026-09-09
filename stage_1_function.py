@@ -1,6 +1,7 @@
 from config import *
 from generate_prompt import *
 from generate_input import *
+import os
 import time
 
 '''
@@ -84,6 +85,129 @@ def call_llm_with_retry(client, model, messages, **kwargs):
             print(f"[API 错误] {e}，3秒后重试 ({attempt}/{max_retries})...")
             time.sleep(3)
     raise RuntimeError(f"LLM API 在 {max_retries} 次尝试后仍失败: {last_error}")
+
+
+def get_llm_worker_count(default=4):
+    raw_value = os.environ.get("MOMO_LLM_WORKERS", str(default)).strip()
+    try:
+        workers = int(raw_value)
+    except ValueError:
+        workers = default
+    return max(1, workers)
+
+
+def get_llm_combination_batch_size(default=64):
+    raw_value = os.environ.get(
+        "MOMO_LLM_COMBINATION_BATCH_SIZE",
+        str(default),
+    ).strip()
+    try:
+        batch_size = int(raw_value)
+    except ValueError:
+        batch_size = default
+    return max(1, batch_size)
+
+
+def get_max_param_combinations(default=256):
+    raw_value = os.environ.get("MOMO_MAX_PARAM_COMBINATIONS", str(default)).strip()
+    try:
+        limit = int(raw_value)
+    except ValueError:
+        limit = default
+    return max(1, limit)
+
+
+def get_max_boundary_combinations_per_path(default=4):
+    raw_value = os.environ.get(
+        "MOMO_MAX_BOUNDARY_COMBINATIONS_PER_PATH",
+        str(default),
+    ).strip()
+    try:
+        limit = int(raw_value)
+    except ValueError:
+        limit = default
+    return max(1, limit)
+
+
+def _dedupe_combinations(combinations):
+    result = []
+    seen = set()
+    for combination in combinations:
+        key = tuple(combination)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(combination)
+    return result
+
+
+def generate_bounded_parameter_combinations(args, conditions, max_combinations=None):
+    args = list(args or [])
+    conditions = conditions or {}
+    max_combinations = max_combinations or get_max_param_combinations()
+    mandatory = [
+        parameter
+        for parameter in conditions.get("Mandatory Parameters", [])
+        if parameter in args
+    ]
+    optional = [parameter for parameter in args if parameter not in mandatory]
+
+    full_count = 2 ** len(optional)
+    if full_count <= max_combinations:
+        combinations = []
+        for r in range(0, len(optional) + 1):
+            for selected in itertools.combinations(optional, r):
+                combinations.append(mandatory + list(selected))
+        return _dedupe_combinations(combinations)
+
+    combinations = [mandatory]
+    for parameter in optional:
+        combinations.append(mandatory + [parameter])
+    for left, right in itertools.combinations(optional, 2):
+        combinations.append(mandatory + [left, right])
+
+    for group in conditions.get("Mandatory Coexistence Parameters", []):
+        group_params = [parameter for parameter in group if parameter in args]
+        if group_params:
+            combinations.append(
+                mandatory
+                + [parameter for parameter in group_params if parameter not in mandatory]
+            )
+    combinations.append(mandatory + optional)
+
+    return _dedupe_combinations(combinations)[:max_combinations]
+
+
+def select_representative_combinations(combinations, max_combinations=None):
+    max_combinations = (
+        max_combinations or get_max_boundary_combinations_per_path()
+    )
+    deduped = _dedupe_combinations(combinations or [])
+    if len(deduped) <= max_combinations:
+        return deduped
+
+    selected = []
+    seen = set()
+
+    def add_combination(combination):
+        key = tuple(combination)
+        if key in seen:
+            return
+        if len(selected) >= max_combinations:
+            return
+        seen.add(key)
+        selected.append(combination)
+
+    ordered = sorted(deduped, key=lambda item: (len(item), tuple(item)))
+    add_combination(ordered[0])
+    add_combination(ordered[-1])
+
+    for combination in deduped:
+        add_combination(combination)
+        if len(selected) >= max_combinations:
+            break
+
+    return selected
 
 
 
@@ -1366,6 +1490,15 @@ def cut_combinations(api_names):
                     error_combinations=error_combinations,
                     filter_params=filter_params
                 )
+                original_count = len(space_combinations)
+                space_combinations = select_representative_combinations(
+                    space_combinations
+                )
+                if original_count > len(space_combinations):
+                    print(
+                        f"[组合裁剪] {api_name} {space_id}: "
+                        f"{original_count} -> {len(space_combinations)}"
+                    )
 
                 if space_combinations:
                     cut_combination.append({

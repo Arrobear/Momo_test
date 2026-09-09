@@ -123,59 +123,36 @@ def generate_prompt_1(fun_string, api_def, api_doc):
     return prompt
 
 
-def generate_prompt_2(fun_string, args, api_def, api_doc):
+def generate_prompt_2(fun_string, combinations, api_def, api_doc):
+    indexed_combinations = [
+        {"index": index, "parameters": combination}
+        for index, combination in enumerate(combinations)
+    ]
+    return f"""
+Validate every parameter-name combination for this Python API.
 
-    ori_prompt = f'''
-    \n1. Role:
-        You are an expert in [{lib_name}], with deep knowledge of its API design, functionality, and practical usage across a wide range of scenarios.
+API: {fun_string}
+Signature: {api_def}
+Documentation:
+{api_doc}
 
-    \n---
-    \n2. Background and Context:
+Combinations:
+{json.dumps(indexed_combinations, ensure_ascii=False)}
 
-    \n(1) API Documentation.
+A combination is valid when the listed parameters can legally be supplied
+together and all required/coexisting parameters are present. Judge parameter
+presence only; do not invent parameter values.
 
-    We provide below the official documentation for the API to be analyzed: 
-    [{fun_string}]
-    This documentation specifies the API’s function signature, behavior, supported data types, argument definitions, default values, constraints, and usage examples, enabling precise understanding of its operational semantics.
-    The explicit definition of the API is as follows:
-    {api_def}
+Return exactly one JSON object:
+{{
+  "results": [
+    {{"index": 0, "valid": true}},
+    {{"index": 1, "valid": false}}
+  ]
+}}
 
-    The specific API documentation content is as below:
-    [{api_doc}]
-
-    \n(2) Parameter Combination
-    Parameter combination refers to the reasonable composition of parameters when calling APIs.
-    One parameter combination for this API is as follows:
-    {args}
-    
-    \n---
-    \n3. Your Tasks:
-    Based on the explicit definition of the API and the API documentation, especially the "Args" part in the API documentation: 
-    Determine whether the parameter combination provided in the 'Parameter Combination' section is a valid input for the given API.
-
-    \n---
-    \n4.Output Format:
-
-    True or False
-
-    \n---
-    \n5.Examples:
-    Output Examples: 
-
-    True
-
-    '''
-    system_prompt = '''
-        You are an assistant who strictly follows user instructions. Response must be made only according to the following rules:\n
-        1. The answer format must be completely consistent with the output format specified by the user;\n
-        2. Prohibit autonomous extension, interpretation, or modification of user instructions.\n
-        '''
-    prompt = [
-            {"role": "system", "content": system_prompt}, 
-            {"role": "user", "content": ori_prompt}
-        ]
-    # prompt = f"<system>\n{system_prompt}\n</system>\n<user>\n{ori_prompt}\n</user>"
-    return ori_prompt
+Include one result for every input index, in the same order. Output JSON only.
+"""
 
 
 
