@@ -1,0 +1,3 @@
+generated_seeds/
+*.tmp
+__pycache__/

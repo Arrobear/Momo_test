@@ -8,8 +8,8 @@ import re
 import textwrap
 from pathlib import Path
 
-ROOT = Path(r"C:\Users\86184\Desktop\Papers")
-DL_LIB_ROOT = ROOT / "documentation" / "dl_lib"
+ROOT = Path(os.environ.get("MOMO_ROOT_PATH", Path(__file__).resolve().parent.parent))
+DL_LIB_ROOT = Path(os.environ.get("MOMO_REPOSITORY_ROOT", ROOT / "dl_lib"))
 
 # Cache: {lib_gitname: {api_name: (file_path, node)}}
 _cache = {}

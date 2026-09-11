@@ -5,6 +5,8 @@ import inspect
 import sys
 import threading
 
+from rq3.seed_integration import decode_input_seed, merge_input_seeds
+
 CRASH_BUG_PATH = root_path + f'/documentation/results/{lib_name}_crash_bugs.json'
 
 def _save_crash_bug(api_name, entry):
@@ -523,6 +525,8 @@ def generate_api_input(api_names):
             param_type = "code" if (_is_code_type(value) or _any_value_is_code(arg_input)) else "literal"
             api_inputs_candidate[key] = {"type": param_type, "values": arg_input}
 
+        merge_input_seeds(api_name, api_inputs_candidate, arg_dict)
+
         # 存储至 json
         if is_file_too_large(path, max_size_mb=1000):
             j += 1
@@ -612,8 +616,9 @@ def _load_run_api(api_name):
     try:
         exec_globals = dict(globals())
         try:
-            lib_mod = importlib.import_module(lib_name)
-            exec_globals[lib_name] = lib_mod
+            importlib.import_module(lib_name)
+            root_name = lib_name.split(".", 1)[0]
+            exec_globals[root_name] = importlib.import_module(root_name)
         except ImportError:
             print(f"[警告] 无法导入库 {lib_name}，run_api 可能无法正常执行")
         exec(code_str, exec_globals, local_namespace)
@@ -654,7 +659,8 @@ def _get_eval_globals():
         _eval_globals_cache = {"__builtins__": __builtins__}
         try:
             lib_mod = importlib.import_module(lib_name)
-            _eval_globals_cache[lib_name] = lib_mod
+            root_name = lib_name.split(".", 1)[0]
+            _eval_globals_cache[root_name] = importlib.import_module(root_name)
             _eval_globals_cache["_momo_lib_mod"] = lib_mod
             _eval_globals_cache["_momo_lib_name"] = lib_name
             # 遍历库的所有子模块和嵌套类，注册到命名空间
@@ -841,6 +847,9 @@ def _eval_param_by_type(param_value, param_type):
 
     返回值: (result, success) — success=False 表示 eval 失败，调用方应跳过该用例而非将字符串传入 run_api
     """
+    is_seed, seed_value = decode_input_seed(param_value)
+    if is_seed:
+        return seed_value, True
     if not isinstance(param_value, str):
         return param_value, True
 
